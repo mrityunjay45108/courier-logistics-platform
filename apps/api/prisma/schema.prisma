@@ -8,6 +8,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
 enum Role {
   CUSTOMER
   SELLER
@@ -16,39 +20,434 @@ enum Role {
   DELIVERY_PARTNER
 }
 
+enum AddressType {
+  HOME
+  OFFICE
+  OTHER
+}
+
 enum ShipmentStatus {
+  DRAFT
   CREATED
-  BOOKED
+  PICKUP_SCHEDULED
   PICKED_UP
   IN_TRANSIT
   OUT_FOR_DELIVERY
   DELIVERED
-  FAILED_ATTEMPT
-  RETURNED_TO_ORIGIN
+  CANCELLED
+  FAILED_DELIVERY
+  RETURN_INITIATED
+  RETURNED
+}
+
+enum ShipmentType {
+  PREPAID
+  COD
+}
+
+enum PaymentType {
+  PREPAID
+  COD
+}
+
+enum PackageType {
+  PARCEL
+  DOCUMENT
+  ELECTRONICS
+  CLOTHING
+  FRAGILE
+  OTHER
+}
+
+enum ShipmentAddressType {
+  PICKUP
+  DELIVERY
+  RETURN_DESTINATION
+}
+
+enum SurchargeType {
+  FIXED
+  PERCENTAGE
+}
+
+enum ShippingZoneCode {
+  LOCAL
+  REGIONAL
+  NATIONAL
+  REMOTE
+}
+
+enum PickupType {
+  FORWARD_PICKUP
+  REVERSE_PICKUP
+  RTO_PICKUP
+  ORIGIN_PICKUP
+}
+
+enum PickupStatus {
+  SCHEDULED
+  ASSIGNED
+  ARRIVING
+  ATTEMPTED
+  PICKED_UP
+  FAILED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum PickupAttemptStatus {
+  SUCCESS
+  FAILED
+  CUSTOMER_UNAVAILABLE
+  ADDRESS_NOT_FOUND
+  PACKAGE_NOT_READY
+  CONTACT_UNREACHABLE
+  OTHER
+}
+
+enum DeliveryStatus {
+  SCHEDULED
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  ATTEMPTED
+  DELIVERED
+  FAILED
+  RESCHEDULED
   CANCELLED
 }
 
-model User {
-  id           String         @id @default(uuid())
-  name         String
-  email        String         @unique
-  phone        String?        @unique
-  passwordHash String
-  role         Role           @default(CUSTOMER)
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+enum DeliveryAttemptStatus {
+  SUCCESS
+  FAILED
+  CUSTOMER_UNAVAILABLE
+  CUSTOMER_REFUSED
+  ADDRESS_NOT_FOUND
+  PHONE_UNREACHABLE
+  DAMAGED_PACKAGE
+  OTHER
+}
 
-  addresses     Address[]
-  refreshTokens RefreshToken[]
-  shipments     Shipment[]     @relation("UserShipments")
+enum ProofOfDeliveryType {
+  PHOTO
+  SIGNATURE
+  OTP
+  RECIPIENT_CONFIRMATION
+  OTHER
+}
+
+enum TrackingEventType {
+  SHIPMENT_CREATED
+  PICKUP_SCHEDULED
+  PICKUP_ATTEMPTED
+  PICKED_UP
+  ARRIVED_AT_ORIGIN
+  DEPARTED_ORIGIN
+  IN_TRANSIT
+  ARRIVED_AT_HUB
+  DEPARTED_HUB
+  OUT_FOR_DELIVERY
+  DELIVERY_ATTEMPTED
+  DELIVERED
+  DELIVERY_FAILED
+  RESCHEDULED
+  CANCELLED
+  EXCEPTION
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  RETURN_PICKED_UP
+  RETURN_RECEIVED
+  RTO_INITIATED
+  RTO_RECEIVED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  LOGOUT_ALL
+  PASSWORD_CHANGED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  USER_ACTIVATED
+  USER_DEACTIVATED
+  ROLE_CHANGED
+  PROFILE_UPDATED
+  SESSION_REVOKED
+  SHIPMENT_CREATED
+  SHIPMENT_CANCELLED
+  SHIPMENT_STATUS_CHANGED
+  PICKUP_CREATED
+  DELIVERY_COMPLETED
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  EXCEPTION_CREATED
+  EXCEPTION_RESOLVED
+  PAYMENT_CAPTURED
+  COD_COLLECTED
+  REFUND_PROCESSED
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RTO_INITIATED
+}
+
+enum PartnerStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  REJECTED
+}
+
+enum AvailabilityStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+  ON_BREAK
+}
+
+enum VehicleType {
+  BIKE
+  SCOOTER
+  BICYCLE
+  THREE_WHEELER
+  VAN
+  TRUCK
+  OTHER
+}
+
+enum TaskType {
+  PICKUP
+  DELIVERY
+  REVERSE_PICKUP
+  RTO
+}
+
+enum TaskStatus {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  STARTED
+  ATTEMPTED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ExceptionType {
+  PICKUP_FAILED
+  DELIVERY_FAILED
+  DELAYED
+  ADDRESS_ISSUE
+  CUSTOMER_UNAVAILABLE
+  PARTNER_ISSUE
+  PACKAGE_ISSUE
+  SERVICEABILITY_ISSUE
+  SYSTEM_ISSUE
+  RETURN_PICKUP_FAILED
+  RTO_DELAYED
+  OTHER
+}
+
+enum ExceptionSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ExceptionStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+enum PaymentOrderStatus {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  CANCELLED
+  EXPIRED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PaymentTransactionStatus {
+  INITIATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum CODOrderStatus {
+  PENDING
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  COLLECTED
+  PARTIALLY_COLLECTED
+  FAILED
+  CANCELLED
+  SETTLED
+}
+
+enum CODMethod {
+  CASH
+  UPI
+  OTHER
+}
+
+enum CODSettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CODLedgerType {
+  COD_COLLECTED
+  COD_ADJUSTMENT
+  COD_FEE
+  COD_SETTLEMENT
+  REFUND_ADJUSTMENT
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  PROCESSED
+  FAILED
+  CANCELLED
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  MISSING_INTERNAL
+  MISSING_PROVIDER
+  AMOUNT_MISMATCH
+  STATUS_MISMATCH
+  MANUAL_REVIEW
+}
+
+enum ReturnType {
+  CUSTOMER_RETURN
+  RTO
+  SELLER_INITIATED
+  DAMAGED
+  WRONG_ITEM
+  OTHER
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PICKUP_SCHEDULED
+  PICKUP_ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  RECEIVED
+  INSPECTION_PENDING
+  INSPECTION_COMPLETED
+  REFUND_PENDING
+  REFUNDED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  DAMAGED_ITEM
+  DEFECTIVE_ITEM
+  ITEM_NOT_AS_DESCRIBED
+  SIZE_ISSUE
+  QUALITY_ISSUE
+  MISSING_PARTS
+  CUSTOMER_CHANGED_MIND
+  OTHER
+}
+
+enum InspectionStatus {
+  PENDING
+  IN_PROGRESS
+  PASSED
+  FAILED
+  NOT_REQUIRED
+}
+
+enum ItemCondition {
+  GOOD
+  DAMAGED
+  USED
+  MISSING_PARTS
+  WRONG_ITEM
+  UNKNOWN
+}
+
+enum ReturnChargeType {
+  RETURN_SHIPPING
+  RTO_CHARGE
+  REVERSE_PICKUP
+  HANDLING
+  INSPECTION
+  OTHER
+}
+
+enum ReturnChargeStatus {
+  ESTIMATED
+  APPLIED
+  WAIVED
+  REFUNDED
+}
+
+// ----------------------------------------------------
+// MODELS
+// ----------------------------------------------------
+
+model User {
+  id             String    @id @default(uuid())
+  name           String
+  email          String    @unique
+  phone          String?   @unique
+  passwordHash   String
+  role           Role      @default(CUSTOMER)
+  isActive       Boolean   @default(true)
+  emailVerified  Boolean   @default(false)
+  phoneVerified  Boolean   @default(false)
+  avatarUrl      String?
+  companyName    String?
+  lastLoginAt    DateTime?
+  preferences    Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  addresses               Address[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  auditLogs               AuditLog[]
+  customerShipments       Shipment[]            @relation("CustomerShipments")
+  sellerShipments         Shipment[]            @relation("SellerShipments")
+  deliveryPartner         DeliveryPartner?
+  paymentOrders           PaymentOrder[]
+  assignedExceptions      ShipmentException[]   @relation("AssignedExceptions")
+  resolvedExceptions      ShipmentException[]   @relation("ResolvedExceptions")
+  customerReturns         ReturnOrder[]         @relation("CustomerReturns")
+  sellerReturns           ReturnOrder[]         @relation("SellerReturns")
 
   @@index([email])
   @@index([role])
+  @@index([isActive])
 }
 
 model Address {
-  id           String   @id @default(uuid())
+  id           String      @id @default(uuid())
   userId       String
   name         String
   phone        String
@@ -57,13 +456,14 @@ model Address {
   city         String
   state        String
   postalCode   String
-  country      String   @default("India")
+  country      String      @default("India")
   landmark     String?
-  isDefault    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  type         AddressType @default(HOME)
+  isDefault    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -77,6 +477,7 @@ model RefreshToken {
   expiresAt  DateTime
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -84,37 +485,753 @@ model RefreshToken {
   @@index([tokenHash])
 }
 
-model Shipment {
-  id                 String          @id @default(uuid())
-  trackingNumber     String          @unique
-  senderId           String
-  recipientName      String
-  recipientPhone     String
-  destinationAddress String
-  status             ShipmentStatus  @default(CREATED)
-  carrier            String          @default("Express Courier Logistics")
-  weightKg           Float           @default(1.0)
-  estimatedDelivery  DateTime?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
-  sender             User            @relation("UserShipments", fields: [senderId], references: [id], onDelete: Cascade)
-  events             TrackingEvent[]
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  userId    String?
+  action    AuditAction
+  ipAddress String?
+  userAgent String?
+  details   Json?
+  createdAt DateTime    @default(now())
+
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// SHIPMENT & PRICING
+// ----------------------------------------------------
+
+model Shipment {
+  id              String         @id @default(uuid())
+  trackingNumber  String         @unique
+  externalOrderId String?
+  customerId      String?
+  sellerId        String?
+  status          ShipmentStatus @default(CREATED)
+  shipmentType    ShipmentType   @default(PREPAID)
+  shippingCost    Decimal        @default(0.0) @db.Decimal(10, 2)
+  codAmount       Decimal        @default(0.0) @db.Decimal(10, 2)
+  currency        String         @default("INR")
+  carrier         String         @default("Apex Express Logistics")
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  cancelledAt     DateTime?
+  deliveredAt     DateTime?
+
+  customer        User?          @relation("CustomerShipments", fields: [customerId], references: [id], onDelete: SetNull)
+  seller          User?          @relation("SellerShipments", fields: [sellerId], references: [id], onDelete: SetNull)
+  package         ShipmentPackage?
+  addresses       ShipmentAddress[]
+  events          TrackingEvent[]
+  pickup          Pickup?
+  delivery        Delivery?
+  tasks           DeliveryTask[]
+  exceptions      ShipmentException[]
+  paymentOrders   PaymentOrder[]
+  codOrder        CODOrder?
+  returnOrders    ReturnOrder[]
+  proofOfDelivery ProofOfDelivery?
 
   @@index([trackingNumber])
-  @@index([senderId])
+  @@index([customerId])
+  @@index([sellerId])
   @@index([status])
+  @@index([externalOrderId])
+  @@index([createdAt])
+}
+
+model ShipmentPackage {
+  id          String      @id @default(uuid())
+  shipmentId  String      @unique
+  weight      Float       // in kg
+  length      Float       // in cm
+  width       Float       // in cm
+  height      Float       // in cm
+  quantity    Int         @default(1)
+  packageType PackageType @default(PARCEL)
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  shipment    Shipment    @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model ShipmentAddress {
+  id           String              @id @default(uuid())
+  shipmentId   String
+  type         ShipmentAddressType
+  name         String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  country      String              @default("India")
+  landmark     String?
+  createdAt    DateTime            @default(now())
+
+  shipment     Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
+
+model ShippingZone {
+  id                  String               @id @default(uuid())
+  name                String
+  code                String               @unique // LOCAL, REGIONAL, NATIONAL, REMOTE
+  description         String?
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  serviceabilityRules ServiceabilityRule[]
+  rateCards           PricingRateCard[]
+  deliveryPartners    DeliveryPartner[]
+  quotes              PricingQuote[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model ServiceabilityRule {
+  id                  String       @id @default(uuid())
+  pincode             String       @unique
+  city                String
+  state               String
+  zoneId              String
+  isPickupAvailable   Boolean      @default(true)
+  isDeliveryAvailable Boolean      @default(true)
+  isActive            Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  zone                ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+
+  @@index([pincode])
+  @@index([zoneId])
+  @@index([isActive])
+}
+
+model PricingRateCard {
+  id                   String        @id @default(uuid())
+  name                 String
+  code                 String        @unique
+  zoneId               String
+  shipmentType         ShipmentType  @default(PREPAID)
+  baseWeight           Decimal       @db.Decimal(10, 2) // e.g. 0.5 kg
+  baseRate             Decimal       @db.Decimal(10, 2) // e.g. 40.00
+  additionalWeightUnit Decimal       @db.Decimal(10, 2) // e.g. 0.5 kg
+  additionalWeightRate Decimal       @db.Decimal(10, 2) // e.g. 20.00
+  codEnabled           Boolean       @default(true)
+  codFixedFee          Decimal       @default(0.0) @db.Decimal(10, 2)
+  codPercentage        Decimal       @default(0.0) @db.Decimal(5, 2)
+  fuelSurchargeType    SurchargeType @default(PERCENTAGE)
+  fuelSurchargeValue   Decimal       @default(0.0) @db.Decimal(10, 2)
+  taxEnabled           Boolean       @default(true)
+  taxPercentage        Decimal       @default(18.0) @db.Decimal(5, 2)
+  currency             String        @default("INR")
+  priority             Int           @default(1)
+  isActive             Boolean       @default(true)
+  effectiveFrom        DateTime      @default(now())
+  effectiveTo          DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  zone                 ShippingZone  @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  quotes               PricingQuote[]
+
+  @@index([zoneId])
+  @@index([shipmentType])
+  @@index([isActive])
+}
+
+model PricingQuote {
+  id                     String          @id @default(uuid())
+  quoteNumber            String          @unique
+  userId                 String?
+  shipmentId             String?
+  pickupPincode          String
+  deliveryPincode        String
+  zoneId                 String
+  shipmentType           ShipmentType
+  actualWeight           Decimal         @db.Decimal(10, 2)
+  volumetricWeight       Decimal         @db.Decimal(10, 2)
+  chargeableWeight       Decimal         @db.Decimal(10, 2)
+  baseShipping           Decimal         @db.Decimal(10, 2)
+  additionalWeightCharge Decimal         @db.Decimal(10, 2)
+  codFee                 Decimal         @db.Decimal(10, 2)
+  surcharge              Decimal         @db.Decimal(10, 2)
+  tax                    Decimal         @db.Decimal(10, 2)
+  total                  Decimal         @db.Decimal(10, 2)
+  currency               String          @default("INR")
+  rateCardId             String
+  expiresAt              DateTime
+  createdAt              DateTime        @default(now())
+
+  zone                   ShippingZone    @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  rateCard               PricingRateCard @relation(fields: [rateCardId], references: [id], onDelete: Restrict)
+
+  @@index([quoteNumber])
+  @@index([userId])
+  @@index([shipmentId])
+}
+
+// ----------------------------------------------------
+// OPERATIONS: PICKUP, DELIVERY, TRACKING
+// ----------------------------------------------------
+
+model Pickup {
+  id              String         @id @default(uuid())
+  shipmentId      String         @unique
+  pickupType      PickupType     @default(FORWARD_PICKUP)
+  returnOrderId   String?
+  scheduledDate   DateTime
+  timeSlotStart   String
+  timeSlotEnd     String
+  status          PickupStatus   @default(SCHEDULED)
+  instructions    String?
+  contactName     String
+  contactPhone    String
+  attemptCount    Int            @default(0)
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  shipment        Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  attempts        PickupAttempt[]
+  scheduleHistory PickupScheduleHistory[]
+
+  @@index([shipmentId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+model PickupAttempt {
+  id            String              @id @default(uuid())
+  pickupId      String
+  attemptNumber Int
+  status        PickupAttemptStatus
+  failureReason String?
+  notes         String?
+  attemptedAt   DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+
+  pickup        Pickup              @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+
+  @@index([pickupId])
+  @@index([attemptedAt])
+}
+
+model PickupScheduleHistory {
+  id            String   @id @default(uuid())
+  pickupId      String
+  previousDate  DateTime
+  previousStart String
+  previousEnd   String
+  newDate       DateTime
+  newStart      String
+  newEnd        String
+  reason        String?
+  changedBy     String?
+  createdAt     DateTime @default(now())
+
+  pickup        Pickup   @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+
+  @@index([pickupId])
+}
+
+model Delivery {
+  id              String          @id @default(uuid())
+  shipmentId      String          @unique
+  scheduledDate   DateTime
+  timeSlotStart   String
+  timeSlotEnd     String
+  status          DeliveryStatus  @default(SCHEDULED)
+  instructions    String?
+  recipientName   String
+  recipientPhone  String
+  attemptCount    Int             @default(0)
+  completedAt     DateTime?
+  failedAt        DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  shipment        Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  attempts        DeliveryAttempt[]
+
+  @@index([shipmentId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+model DeliveryAttempt {
+  id              String                @id @default(uuid())
+  deliveryId      String
+  attemptNumber   Int
+  status          DeliveryAttemptStatus
+  failureReason   String?
+  notes           String?
+  attemptedAt     DateTime              @default(now())
+  createdAt       DateTime              @default(now())
+
+  delivery        Delivery              @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  proofOfDelivery ProofOfDelivery?
+
+  @@index([deliveryId])
+  @@index([attemptedAt])
+}
+
+model ProofOfDelivery {
+  id                String              @id @default(uuid())
+  shipmentId        String              @unique
+  deliveryAttemptId String?             @unique
+  type              ProofOfDeliveryType @default(RECIPIENT_CONFIRMATION)
+  reference         String?
+  recipientName     String
+  recipientRelation String?
+  notes             String?
+  createdAt         DateTime            @default(now())
+
+  shipment          Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  deliveryAttempt   DeliveryAttempt?    @relation(fields: [deliveryAttemptId], references: [id], onDelete: SetNull)
+
+  @@index([shipmentId])
 }
 
 model TrackingEvent {
-  id          String         @id @default(uuid())
+  id          String            @id @default(uuid())
   shipmentId  String
   status      ShipmentStatus
-  location    String
+  eventType   TrackingEventType @default(SHIPMENT_CREATED)
+  title       String            @default("Tracking Update")
   description String
-  timestamp   DateTime       @default(now())
+  location    String?
+  city        String?
+  state       String?
+  country     String?           @default("India")
+  isPublic    Boolean           @default(true)
+  metadata    Json?
+  createdBy   String?
+  createdAt   DateTime          @default(now())
 
-  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipment    Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 
   @@index([shipmentId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@index([isPublic])
+}
+
+model TrackingLocation {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  city      String
+  state     String
+  country   String   @default("India")
+  type      String   @default("HUB") // WAREHOUSE, HUB, ORIGIN, DESTINATION
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([code])
+  @@index([city])
+}
+
+// ----------------------------------------------------
+// DELIVERY PARTNER / RIDER MANAGEMENT
+// ----------------------------------------------------
+
+model DeliveryPartner {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  partnerCode        String             @unique
+  fullName           String
+  phone              String             @unique
+  email              String             @unique
+  status             PartnerStatus      @default(PENDING)
+  availabilityStatus AvailabilityStatus @default(OFFLINE)
+  vehicleType        VehicleType        @default(BIKE)
+  vehicleNumber      String?
+  serviceZoneId      String?
+  joiningDate        DateTime           @default(now())
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceZone        ShippingZone?      @relation(fields: [serviceZoneId], references: [id], onDelete: SetNull)
+  tasks              DeliveryTask[]
+  codCollections     CODCollection[]
+
+  @@index([partnerCode])
+  @@index([status])
+  @@index([availabilityStatus])
+  @@index([serviceZoneId])
+}
+
+model DeliveryTask {
+  id                String              @id @default(uuid())
+  taskNumber        String              @unique
+  shipmentId        String
+  deliveryPartnerId String
+  returnOrderId     String?
+  taskType          TaskType            @default(PICKUP)
+  status            TaskStatus          @default(ASSIGNED)
+  assignedAt        DateTime            @default(now())
+  acceptedAt        DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  rejectedAt        DateTime?
+  cancelledAt       DateTime?
+  rejectionReason   String?
+  notes             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  shipment          Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  deliveryPartner   DeliveryPartner     @relation(fields: [deliveryPartnerId], references: [id], onDelete: Restrict)
+  returnOrder       ReturnOrder?        @relation(fields: [returnOrderId], references: [id], onDelete: SetNull)
+  events            DeliveryTaskEvent[]
+
+  @@index([taskNumber])
+  @@index([shipmentId])
+  @@index([deliveryPartnerId])
+  @@index([status])
+  @@index([taskType])
+}
+
+model DeliveryTaskEvent {
+  id          String       @id @default(uuid())
+  taskId      String
+  eventType   TaskStatus
+  description String
+  metadata    Json?
+  createdBy   String?
+  createdAt   DateTime     @default(now())
+
+  task        DeliveryTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// EXCEPTION MANAGEMENT
+// ----------------------------------------------------
+
+model ShipmentException {
+  id              String            @id @default(uuid())
+  shipmentId      String
+  type            ExceptionType
+  severity        ExceptionSeverity @default(MEDIUM)
+  status          ExceptionStatus   @default(OPEN)
+  title           String
+  description     String
+  source          String            @default("SYSTEM")
+  assignedTo      String?
+  resolvedBy      String?
+  resolutionNotes String?
+  createdAt       DateTime          @default(now())
+  resolvedAt      DateTime?
+  updatedAt       DateTime          @updatedAt
+
+  shipment        Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  assignedUser    User?             @relation("AssignedExceptions", fields: [assignedTo], references: [id], onDelete: SetNull)
+  resolvedByUser  User?             @relation("ResolvedExceptions", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([shipmentId])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+}
+
+// ----------------------------------------------------
+// PAYMENTS, COD & RECONCILIATION
+// ----------------------------------------------------
+
+model PaymentOrder {
+  id              String             @id @default(uuid())
+  orderNumber     String             @unique
+  shipmentId      String
+  userId          String
+  amount          Decimal            @db.Decimal(10, 2)
+  currency        String             @default("INR")
+  paymentType     PaymentType        @default(PREPAID)
+  status          PaymentOrderStatus @default(CREATED)
+  provider        String             @default("mock")
+  providerOrderId String?
+  idempotencyKey  String?
+  expiresAt       DateTime?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  shipment        Shipment           @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions    PaymentTransaction[]
+  refunds         Refund[]
+
+  @@index([orderNumber])
+  @@index([shipmentId])
+  @@index([userId])
+  @@index([status])
+}
+
+model PaymentTransaction {
+  id                    String                   @id @default(uuid())
+  transactionNumber     String                   @unique
+  paymentOrderId        String
+  shipmentId            String
+  userId                String
+  provider              String                   @default("mock")
+  providerTransactionId String?
+  amount                Decimal                  @db.Decimal(10, 2)
+  currency              String                   @default("INR")
+  status                PaymentTransactionStatus @default(INITIATED)
+  paymentMethod         String?
+  failureCode           String?
+  failureReason         String?
+  metadata              Json?
+  processedAt           DateTime?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  paymentOrder          PaymentOrder             @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+  refunds               Refund[]
+
+  @@index([transactionNumber])
+  @@index([paymentOrderId])
+  @@index([shipmentId])
+  @@index([status])
+}
+
+model PaymentWebhookEvent {
+  id                String    @id @default(uuid())
+  provider          String
+  providerEventId   String
+  eventType         String
+  signatureVerified Boolean   @default(false)
+  processingStatus  String    @default("RECEIVED")
+  payloadHash       String?
+  processedAt       DateTime?
+  errorMessage      String?
+  createdAt         DateTime  @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([providerEventId])
+}
+
+model CODOrder {
+  id                   String          @id @default(uuid())
+  shipmentId           String          @unique
+  customerId           String
+  sellerId             String?
+  codAmount            Decimal         @db.Decimal(10, 2)
+  collectedAmount      Decimal         @default(0.0) @db.Decimal(10, 2)
+  outstandingAmount    Decimal         @db.Decimal(10, 2)
+  currency             String          @default("INR")
+  status               CODOrderStatus  @default(PENDING)
+  collectedAt          DateTime?
+  collectedByPartnerId String?
+  notes                String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  shipment             Shipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  collections          CODCollection[]
+  ledgerEntries        CODLedgerEntry[]
+
+  @@index([shipmentId])
+  @@index([customerId])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model CODCollection {
+  id                String          @id @default(uuid())
+  codOrderId        String
+  shipmentId        String
+  deliveryPartnerId String
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String          @default("INR")
+  method            CODMethod       @default(CASH)
+  reference         String?
+  collectedAt       DateTime        @default(now())
+  notes             String?
+
+  codOrder          CODOrder        @relation(fields: [codOrderId], references: [id], onDelete: Cascade)
+  deliveryPartner   DeliveryPartner @relation(fields: [deliveryPartnerId], references: [id], onDelete: Restrict)
+
+  @@index([codOrderId])
+  @@index([deliveryPartnerId])
+  @@index([collectedAt])
+}
+
+model CODSettlement {
+  id               String              @id @default(uuid())
+  settlementNumber String              @unique
+  sellerId         String
+  totalCollected   Decimal             @db.Decimal(10, 2)
+  adjustments      Decimal             @default(0.0) @db.Decimal(10, 2)
+  fees             Decimal             @default(0.0) @db.Decimal(10, 2)
+  netAmount        Decimal             @db.Decimal(10, 2)
+  currency         String              @default("INR")
+  status           CODSettlementStatus @default(PENDING)
+  periodStart      DateTime
+  periodEnd        DateTime
+  processedAt      DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+model CODLedgerEntry {
+  id         String        @id @default(uuid())
+  shipmentId String
+  codOrderId String
+  sellerId   String?
+  type       CODLedgerType
+  amount     Decimal       @db.Decimal(10, 2)
+  currency   String        @default("INR")
+  reference  String?
+  createdAt  DateTime      @default(now())
+
+  codOrder   CODOrder      @relation(fields: [codOrderId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([codOrderId])
+}
+
+model Refund {
+  id                   String             @id @default(uuid())
+  refundNumber         String             @unique
+  paymentOrderId       String
+  paymentTransactionId String?
+  shipmentId           String
+  amount               Decimal            @db.Decimal(10, 2)
+  currency             String             @default("INR")
+  reason               String
+  status               RefundStatus       @default(REQUESTED)
+  providerRefundId     String?
+  requestedBy          String
+  processedAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  paymentOrder         PaymentOrder       @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+  paymentTransaction   PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([refundNumber])
+  @@index([paymentOrderId])
+  @@index([status])
+}
+
+model PaymentReconciliation {
+  id                    String               @id @default(uuid())
+  provider              String
+  providerTransactionId String
+  paymentTransactionId  String?
+  expectedAmount        Decimal?             @db.Decimal(10, 2)
+  providerAmount        Decimal?             @db.Decimal(10, 2)
+  internalStatus        String?
+  providerStatus        String?
+  reconciliationStatus  ReconciliationStatus @default(MATCHED)
+  notes                 String?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([providerTransactionId])
+  @@index([reconciliationStatus])
+}
+
+// ----------------------------------------------------
+// RETURNS & REVERSE LOGISTICS
+// ----------------------------------------------------
+
+model ReturnOrder {
+  id              String            @id @default(uuid())
+  returnNumber    String            @unique
+  shipmentId      String
+  userId          String
+  sellerId        String?
+  type            ReturnType        @default(CUSTOMER_RETURN)
+  status          ReturnStatus      @default(REQUESTED)
+  reason          ReturnReason
+  customerComment String?
+  requestedAt     DateTime          @default(now())
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  shipment        Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  user            User              @relation("CustomerReturns", fields: [userId], references: [id], onDelete: Cascade)
+  seller          User?             @relation("SellerReturns", fields: [sellerId], references: [id], onDelete: SetNull)
+  inspection      ReturnInspection?
+  charges         ReturnCharge[]
+  tasks           DeliveryTask[]
+
+  @@index([returnNumber])
+  @@index([shipmentId])
+  @@index([userId])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model ReturnInspection {
+  id            String           @id @default(uuid())
+  returnOrderId String           @unique
+  inspectedBy   String?
+  status        InspectionStatus @default(PENDING)
+  condition     ItemCondition    @default(UNKNOWN)
+  notes         String?
+  inspectedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  returnOrder   ReturnOrder      @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
+}
+
+model ReturnCharge {
+  id            String             @id @default(uuid())
+  returnOrderId String
+  type          ReturnChargeType
+  amount        Decimal            @db.Decimal(10, 2)
+  currency      String             @default("INR")
+  status        ReturnChargeStatus @default(ESTIMATED)
+  description   String?
+  createdAt     DateTime           @default(now())
+
+  returnOrder   ReturnOrder        @relation(fields: [returnOrderId], references: [id], onDelete: Cascade)
+
+  @@index([returnOrderId])
 }

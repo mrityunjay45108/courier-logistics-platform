@@ -4,8 +4,12 @@ import { prisma } from '../lib/prisma';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors';
 import type { UserProfile, UserRole } from '@courier/types';
 
+export interface AuthUser extends UserProfile {
+  userId: string;
+}
+
 export interface AuthenticatedRequest extends Request {
-  user?: UserProfile;
+  user?: AuthUser;
 }
 
 export async function authenticate(
@@ -55,12 +59,57 @@ export async function authenticate(
 
     req.user = {
       ...user,
+      userId: user.id,
       role: user.role as UserRole,
     };
 
     next();
   } catch (error) {
     next(error);
+  }
+}
+
+export async function optionalAuthenticate(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) return next();
+
+    const payload = verifyAccessToken(token);
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (user && user.isActive) {
+      req.user = {
+        ...user,
+        userId: user.id,
+        role: user.role as UserRole,
+      };
+    }
+
+    next();
+  } catch {
+    // Silently continue for optional authentication
+    next();
   }
 }
 
