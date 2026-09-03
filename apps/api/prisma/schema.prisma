@@ -1,0 +1,119 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CUSTOMER
+  SELLER
+  ADMIN
+  OPERATIONS
+  DELIVERY_PARTNER
+}
+
+enum ShipmentStatus {
+  CREATED
+  BOOKED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_ATTEMPT
+  RETURNED_TO_ORIGIN
+  CANCELLED
+}
+
+model User {
+  id           String         @id @default(uuid())
+  name         String
+  email        String         @unique
+  phone        String?        @unique
+  passwordHash String
+  role         Role           @default(CUSTOMER)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  addresses     Address[]
+  refreshTokens RefreshToken[]
+  shipments     Shipment[]     @relation("UserShipments")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  country      String   @default("India")
+  landmark     String?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  userId     String
+  userAgent  String?
+  ipAddress  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Shipment {
+  id                 String          @id @default(uuid())
+  trackingNumber     String          @unique
+  senderId           String
+  recipientName      String
+  recipientPhone     String
+  destinationAddress String
+  status             ShipmentStatus  @default(CREATED)
+  carrier            String          @default("Express Courier Logistics")
+  weightKg           Float           @default(1.0)
+  estimatedDelivery  DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  sender             User            @relation("UserShipments", fields: [senderId], references: [id], onDelete: Cascade)
+  events             TrackingEvent[]
+
+  @@index([trackingNumber])
+  @@index([senderId])
+  @@index([status])
+}
+
+model TrackingEvent {
+  id          String         @id @default(uuid())
+  shipmentId  String
+  status      ShipmentStatus
+  location    String
+  description String
+  timestamp   DateTime       @default(now())
+
+  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
