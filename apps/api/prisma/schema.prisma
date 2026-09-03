@@ -440,6 +440,7 @@ model User {
   resolvedExceptions      ShipmentException[]   @relation("ResolvedExceptions")
   customerReturns         ReturnOrder[]         @relation("CustomerReturns")
   sellerReturns           ReturnOrder[]         @relation("SellerReturns")
+  apiClients              ApiClient[]           @relation("SellerApiClients")
 
   @@index([email])
   @@index([role])
@@ -550,6 +551,7 @@ model Shipment {
   codOrder        CODOrder?
   returnOrders    ReturnOrder[]
   proofOfDelivery ProofOfDelivery?
+  label           ShippingLabel?
 
   @@index([trackingNumber])
   @@index([customerId])
@@ -1235,3 +1237,122 @@ model ReturnCharge {
 
   @@index([returnOrderId])
 }
+
+// ====================================================
+// E-COMMERCE INTEGRATION & MACHINE AUTHENTICATION
+// ====================================================
+
+enum IdempotencyStatus {
+  PROCESSING
+  RESOLVED
+  FAILED
+}
+
+enum OutboundWebhookStatus {
+  PENDING
+  SENDING
+  DELIVERED
+  FAILED
+  DEAD_LETTER
+}
+
+model ApiClient {
+  id                   String                @id @default(uuid())
+  name                 String
+  keyHash              String                @unique
+  keyPrefix            String
+  sellerId             String?
+  scopes               String[]              @default(["shipments:read", "shipments:write", "pricing:read", "tracking:read", "webhooks:manage"])
+  isActive             Boolean               @default(true)
+  expiresAt            DateTime?
+  lastUsedAt           DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  seller               User?                 @relation("SellerApiClients", fields: [sellerId], references: [id], onDelete: SetNull)
+  idempotencyKeys      IdempotencyKey[]
+  webhookSubscriptions WebhookSubscription[]
+
+  @@index([keyHash])
+  @@index([sellerId])
+  @@index([isActive])
+}
+
+model IdempotencyKey {
+  id             String            @id @default(uuid())
+  key            String
+  clientId       String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  resourceType   String?
+  resourceId     String?
+  status         IdempotencyStatus @default(PROCESSING)
+  expiresAt      DateTime
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  client         ApiClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, key])
+  @@index([clientId, key])
+  @@index([expiresAt])
+}
+
+model ShippingLabel {
+  id          String   @id @default(uuid())
+  shipmentId  String   @unique
+  format      String   @default("PDF")
+  url         String?
+  storageKey  String?
+  barcodeText String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
+
+model WebhookSubscription {
+  id               String                 @id @default(uuid())
+  clientId         String
+  url              String
+  secretHash       String
+  secretKey        String?
+  isActive         Boolean                @default(true)
+  subscribedEvents String[]               @default(["shipment.*"])
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  client           ApiClient              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  events           OutboundWebhookEvent[]
+
+  @@index([clientId])
+  @@index([isActive])
+}
+
+model OutboundWebhookEvent {
+  id             String                @id @default(uuid())
+  subscriptionId String
+  eventId        String                @unique
+  event          String
+  payload        Json
+  status         OutboundWebhookStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  maxAttempts    Int                   @default(5)
+  nextAttemptAt  DateTime?             @default(now())
+  lastAttemptAt  DateTime?
+  responseStatus Int?
+  lastError      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  subscription   WebhookSubscription   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}
+

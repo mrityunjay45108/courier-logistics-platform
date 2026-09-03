@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { verifyAccessToken } from '../lib/tokens';
 import { prisma } from '../lib/prisma';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors';
@@ -8,8 +9,16 @@ export interface AuthUser extends UserProfile {
   userId: string;
 }
 
+export interface ApiClientContext {
+  id: string;
+  name: string;
+  sellerId?: string | null;
+  scopes: string[];
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
+  apiClient?: ApiClientContext;
 }
 
 export async function authenticate(
@@ -130,3 +139,153 @@ export function authorize(...allowedRoles: UserRole[]) {
     next();
   };
 }
+
+/**
+ * Server-to-server API Key authentication via X-Api-Key header
+ */
+export async function authenticateApiClient(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const rawApiKey = req.headers['x-api-key'] as string;
+    if (!rawApiKey) {
+      throw new UnauthorizedError('API key is required in X-Api-Key header');
+    }
+
+    const trimmedKey = rawApiKey.trim();
+    const keyHash = crypto.createHash('sha256').update(trimmedKey).digest('hex');
+
+    const client = await prisma.apiClient.findUnique({
+      where: { keyHash },
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!client || !client.isActive) {
+      throw new UnauthorizedError('Invalid or inactive API key');
+    }
+
+    if (client.expiresAt && client.expiresAt < new Date()) {
+      throw new UnauthorizedError('API key has expired');
+    }
+
+    // Update lastUsedAt asynchronously without blocking
+    prisma.apiClient.update({
+      where: { id: client.id },
+      data: { lastUsedAt: new Date() },
+    }).catch(() => {});
+
+    req.apiClient = {
+      id: client.id,
+      name: client.name,
+      sellerId: client.sellerId,
+      scopes: client.scopes,
+    };
+
+    // Attach user representation linked to seller account
+    if (client.seller && client.seller.isActive) {
+      req.user = {
+        ...client.seller,
+        userId: client.seller.id,
+        role: 'SELLER' as UserRole,
+      };
+    } else {
+      req.user = {
+        id: client.id,
+        userId: client.id,
+        name: client.name,
+        email: `${client.keyPrefix}@api-client.local`,
+        role: 'SELLER' as UserRole,
+        isActive: true,
+        createdAt: client.createdAt,
+        updatedAt: client.updatedAt,
+      };
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Dual authentication: accepts either Bearer JWT or X-Api-Key
+ */
+export async function authenticateUserOrApiClient(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const apiKey = req.headers['x-api-key'] as string;
+  const authHeader = req.headers.authorization;
+
+  if (apiKey) {
+    return authenticateApiClient(req, res, next);
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authenticate(req, res, next);
+  }
+
+  return next(new UnauthorizedError('Authentication required (provide Bearer token or X-Api-Key)'));
+}
+
+/**
+ * Optional dual authentication
+ */
+export async function optionalAuthenticateUserOrApiClient(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const apiKey = req.headers['x-api-key'] as string;
+  const authHeader = req.headers.authorization;
+
+  if (apiKey) {
+    return authenticateApiClient(req, res, (err) => {
+      // If error, continue without client
+      next();
+    });
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return optionalAuthenticate(req, res, next);
+  }
+
+  next();
+}
+
+/**
+ * Scope authorization check for API Clients
+ */
+export function requireScope(scope: string) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    // If it's a human user (JWT), skip API client scope check
+    if (!req.apiClient) {
+      return next();
+    }
+
+    if (!req.apiClient.scopes.includes(scope) && !req.apiClient.scopes.includes('*')) {
+      return next(
+        new ForbiddenError(`Forbidden: API client lacks required scope '${scope}'`)
+      );
+    }
+
+    next();
+  };
+}
+

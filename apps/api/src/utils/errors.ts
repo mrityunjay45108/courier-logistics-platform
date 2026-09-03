@@ -41,8 +41,8 @@ export class ForbiddenError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(message = 'Resource already exists') {
-    super(message, 409, 'CONFLICT');
+  constructor(message = 'Resource already exists', code = 'CONFLICT', details?: unknown) {
+    super(message, 409, code, details);
   }
 }
 

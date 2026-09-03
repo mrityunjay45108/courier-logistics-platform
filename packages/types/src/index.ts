@@ -472,3 +472,68 @@ export interface ReturnOrderDto {
   rejectedAt?: string | Date | null;
   completedAt?: string | Date | null;
 }
+
+// ====================================================
+// E-COMMERCE INTEGRATION TYPES
+// ====================================================
+
+export interface ApiClientDto {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  sellerId?: string | null;
+  scopes: string[];
+  isActive: boolean;
+  expiresAt?: string | Date | null;
+  lastUsedAt?: string | Date | null;
+  createdAt: string | Date;
+}
+
+export interface ShippingLabelDto {
+  shipmentId: string;
+  trackingNumber: string;
+  format: string;
+  url?: string | null;
+  barcodeText: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string | Date;
+}
+
+export interface CourierShipmentIntegrationResponse {
+  shipmentId: string;
+  externalOrderId: string | null;
+  trackingNumber: string;
+  status: ShipmentStatus;
+  shipmentType: ShipmentType;
+  shippingCost: number;
+  codAmount: number;
+  currency: string;
+  estimatedDelivery?: string | Date | null;
+  carrier: string;
+  pickupStatus?: string | null;
+  deliveryStatus?: string | null;
+  label?: {
+    format: string;
+    url?: string | null;
+    barcodeText: string;
+  } | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface WebhookSubscriptionDto {
+  id: string;
+  url: string;
+  isActive: boolean;
+  subscribedEvents: string[];
+  createdAt: string | Date;
+}
+
+export interface OutboundWebhookEnvelope<T = Record<string, unknown>> {
+  id: string;
+  event: string;
+  version: string;
+  createdAt: string;
+  data: T;
+}
+

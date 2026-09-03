@@ -20,6 +20,7 @@ import {
   CODOrderStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -105,6 +106,44 @@ async function main() {
   });
 
   console.log('✅ Users seeded for all 5 roles.');
+
+  // 1b. Seed Demo E-Commerce API Client for server-to-server integration
+  // Raw Key: ck_live_ecommerce_test_key_2026
+  const demoApiKey = 'ck_live_ecommerce_test_key_2026';
+  const demoKeyHash = crypto.createHash('sha256').update(demoApiKey).digest('hex');
+
+  const apiClient = await prisma.apiClient.upsert({
+    where: { keyHash: demoKeyHash },
+    update: { isActive: true, sellerId: seller.id },
+    create: {
+      name: 'Apex E-Commerce Platform',
+      keyHash: demoKeyHash,
+      keyPrefix: 'ck_live_ecommerce',
+      sellerId: seller.id,
+      scopes: ['shipments:read', 'shipments:write', 'pricing:read', 'tracking:read', 'webhooks:manage'],
+      isActive: true,
+    },
+  });
+
+  // Seed default Webhook Subscription for the API Client
+  const demoWebhookSecret = 'whsec_demo_ecommerce_signing_secret_2026';
+  const demoSecretHash = crypto.createHash('sha256').update(demoWebhookSecret).digest('hex');
+
+  await prisma.webhookSubscription.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000001' },
+    update: { clientId: apiClient.id, secretKey: demoWebhookSecret, secretHash: demoSecretHash },
+    create: {
+      id: '00000000-0000-0000-0000-000000000001',
+      clientId: apiClient.id,
+      url: 'https://ecommerce.local/api/v1/shipments/webhooks/courier',
+      secretHash: demoSecretHash,
+      secretKey: demoWebhookSecret,
+      subscribedEvents: ['shipment.*', 'rto.*'],
+      isActive: true,
+    },
+  });
+
+  console.log('✅ Demo E-Commerce ApiClient and Webhook Subscription seeded.');
 
   // 2. Seed Customer & Seller Saved Addresses
   await prisma.address.deleteMany({ where: { userId: customer.id } });

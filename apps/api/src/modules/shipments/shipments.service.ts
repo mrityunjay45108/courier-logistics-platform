@@ -7,6 +7,7 @@ import {
   BadRequestError,
   ForbiddenError,
 } from '../../utils/errors';
+import { webhookDispatcherService } from '../integrations/webhooks/webhook-dispatcher.service';
 import type { CreateShipmentInput } from '@courier/shared';
 import {
   ShipmentStatus,
@@ -177,6 +178,39 @@ export class ShipmentsService {
         });
       }
 
+      // Initial Shipping Label Metadata
+      await tx.shippingLabel.create({
+        data: {
+          shipmentId: createdShipment.id,
+          format: 'PDF',
+          barcodeText: trackingNumber,
+          metadata: {
+            trackingNumber,
+            consignor: {
+              name: pickupName,
+              phone: pickupPhone,
+              city: pickupCity,
+              state: pickupState,
+              postalCode: pickupPostalCode,
+            },
+            consignee: {
+              name: input.deliveryAddress.name,
+              phone: input.deliveryAddress.phone,
+              city: input.deliveryAddress.city,
+              state: input.deliveryAddress.state,
+              postalCode: input.deliveryAddress.postalCode,
+            },
+            package: {
+              weight: input.package.weight,
+              dimensions: `${input.package.length}x${input.package.width}x${input.package.height} cm`,
+            },
+            shipmentType: input.shipmentType,
+            codAmount: input.codAmount,
+            routingZone: quote.zone,
+          },
+        },
+      });
+
       // Audit Log
       await tx.auditLog.create({
         data: {
@@ -194,7 +228,16 @@ export class ShipmentsService {
       return createdShipment;
     });
 
-    return await this.getShipmentById(shipment.id, userId, role);
+    const fullShipment = await this.getShipmentById(shipment.id, userId, role);
+
+    // Dispatch outbound webhook for external E-Commerce integrations
+    webhookDispatcherService.recordAndDispatch(
+      'shipment.created',
+      this.formatIntegrationResponse(fullShipment),
+      isSeller ? userId : null
+    );
+
+    return fullShipment;
   }
 
   /**
@@ -302,6 +345,7 @@ export class ShipmentsService {
         codOrder: true,
         paymentOrders: true,
         returnOrders: true,
+        label: true,
       },
     });
 
@@ -318,6 +362,184 @@ export class ShipmentsService {
     }
 
     return shipment;
+  }
+
+  /**
+   * Format shipment as safe DTO for external E-Commerce integration
+   */
+  formatIntegrationResponse(shipment: any) {
+    return {
+      shipmentId: shipment.id,
+      externalOrderId: shipment.externalOrderId || null,
+      trackingNumber: shipment.trackingNumber,
+      status: shipment.status,
+      shipmentType: shipment.shipmentType,
+      shippingCost: Number(shipment.shippingCost),
+      codAmount: Number(shipment.codAmount),
+      currency: shipment.currency,
+      carrier: shipment.carrier,
+      estimatedDelivery: shipment.deliveredAt || null,
+      pickupStatus: shipment.pickup?.status || null,
+      deliveryStatus: shipment.delivery?.status || null,
+      label: shipment.label
+        ? {
+            format: shipment.label.format,
+            url: shipment.label.url || null,
+            barcodeText: shipment.label.barcodeText,
+          }
+        : null,
+      createdAt: shipment.createdAt,
+      updatedAt: shipment.updatedAt,
+    };
+  }
+
+  /**
+   * Get single shipment detail by externalOrderId with tenant isolation
+   */
+  async getByExternalOrderId(externalOrderId: string, userId: string, role: string, sellerId?: string | null) {
+    const where: any = { externalOrderId: externalOrderId.trim() };
+
+    // Strict tenant / role scoping
+    if (sellerId) {
+      where.sellerId = sellerId;
+    } else if (role === 'SELLER') {
+      where.sellerId = userId;
+    } else if (role === 'CUSTOMER') {
+      where.customerId = userId;
+    }
+
+    const shipment = await prisma.shipment.findFirst({
+      where,
+      include: {
+        package: true,
+        addresses: true,
+        events: { orderBy: { createdAt: 'asc' } },
+        pickup: { include: { attempts: true } },
+        delivery: { include: { attempts: true } },
+        proofOfDelivery: true,
+        label: true,
+        codOrder: true,
+      },
+    });
+
+    if (!shipment) {
+      throw new NotFoundError(`Shipment with external order ID '${externalOrderId}' not found`);
+    }
+
+    return shipment;
+  }
+
+  /**
+   * Get single shipment detail by trackingNumber with tenant isolation
+   */
+  async getByTrackingNumber(trackingNumber: string, userId: string, role: string, sellerId?: string | null) {
+    const where: any = { trackingNumber: trackingNumber.trim() };
+
+    // Strict tenant / role scoping
+    if (sellerId) {
+      where.sellerId = sellerId;
+    } else if (role === 'SELLER') {
+      where.sellerId = userId;
+    } else if (role === 'CUSTOMER') {
+      where.customerId = userId;
+    }
+
+    const shipment = await prisma.shipment.findFirst({
+      where,
+      include: {
+        package: true,
+        addresses: true,
+        events: { orderBy: { createdAt: 'asc' } },
+        pickup: { include: { attempts: true } },
+        delivery: { include: { attempts: true } },
+        proofOfDelivery: true,
+        label: true,
+        codOrder: true,
+      },
+    });
+
+    if (!shipment) {
+      throw new NotFoundError(`Shipment with tracking number '${trackingNumber}' not found`);
+    }
+
+    return shipment;
+  }
+
+  /**
+   * Get or generate shipping label metadata
+   */
+  async getShippingLabel(identifier: string, userId: string, role: string, sellerId?: string | null) {
+    const where: any = {
+      OR: [
+        { id: identifier },
+        { externalOrderId: identifier },
+        { trackingNumber: identifier },
+      ],
+    };
+
+    if (sellerId) {
+      where.sellerId = sellerId;
+    } else if (role === 'SELLER') {
+      where.sellerId = userId;
+    } else if (role === 'CUSTOMER') {
+      where.customerId = userId;
+    }
+
+    const shipment = await prisma.shipment.findFirst({
+      where,
+      include: {
+        addresses: true,
+        package: true,
+        label: true,
+      },
+    });
+
+    if (!shipment) {
+      throw new NotFoundError('Shipment not found or access denied');
+    }
+
+    if (shipment.label) {
+      return {
+        shipmentId: shipment.id,
+        trackingNumber: shipment.trackingNumber,
+        format: shipment.label.format,
+        url: shipment.label.url || null,
+        storageType: 'LABEL_METADATA_ONLY',
+        barcodeText: shipment.label.barcodeText,
+        metadata: shipment.label.metadata,
+        createdAt: shipment.label.createdAt,
+      };
+    }
+
+    const pickup = shipment.addresses.find((a) => a.type === ShipmentAddressType.PICKUP);
+    const delivery = shipment.addresses.find((a) => a.type === ShipmentAddressType.DELIVERY);
+
+    const createdLabel = await prisma.shippingLabel.create({
+      data: {
+        shipmentId: shipment.id,
+        format: 'PDF',
+        barcodeText: shipment.trackingNumber,
+        metadata: {
+          trackingNumber: shipment.trackingNumber,
+          consignor: pickup ? { name: pickup.name, city: pickup.city, state: pickup.state, postalCode: pickup.postalCode } : null,
+          consignee: delivery ? { name: delivery.name, city: delivery.city, state: delivery.state, postalCode: delivery.postalCode } : null,
+          package: shipment.package ? { weight: shipment.package.weight } : null,
+          shipmentType: shipment.shipmentType,
+          codAmount: Number(shipment.codAmount),
+        },
+      },
+    });
+
+    return {
+      shipmentId: shipment.id,
+      trackingNumber: shipment.trackingNumber,
+      format: createdLabel.format,
+      url: createdLabel.url || null,
+      storageType: 'LABEL_METADATA_ONLY',
+      barcodeText: createdLabel.barcodeText,
+      metadata: createdLabel.metadata,
+      createdAt: createdLabel.createdAt,
+    };
   }
 
   /**
@@ -360,7 +582,16 @@ export class ShipmentsService {
       }),
     ]);
 
-    return await this.getShipmentById(id, userId, role);
+    const updated = await this.getShipmentById(id, userId, role);
+
+    // Dispatch cancellation webhook
+    webhookDispatcherService.recordAndDispatch(
+      'shipment.cancelled',
+      this.formatIntegrationResponse(updated),
+      shipment.sellerId
+    );
+
+    return updated;
   }
 
   /**
@@ -407,7 +638,21 @@ export class ShipmentsService {
       }),
     ]);
 
-    return await prisma.shipment.findUnique({ where: { id }, include: { events: true } });
+    const updated = await prisma.shipment.findUnique({
+      where: { id },
+      include: { events: true, label: true, pickup: true, delivery: true },
+    });
+
+    // Dispatch status change webhook
+    if (updated) {
+      webhookDispatcherService.recordAndDispatch(
+        `shipment.${newStatus.toLowerCase()}`,
+        this.formatIntegrationResponse(updated),
+        shipment.sellerId
+      );
+    }
+
+    return updated;
   }
 }
 

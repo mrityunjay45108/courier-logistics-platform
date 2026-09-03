@@ -277,3 +277,25 @@ export const trackingQuerySchema = z.object({
 });
 
 export type TrackingQueryInput = z.infer<typeof trackingQuerySchema>;
+
+// ====================================================
+// E-COMMERCE INTEGRATION SCHEMAS
+// ====================================================
+
+export const createWebhookSubscriptionSchema = z.object({
+  url: z.string().url('A valid destination URL is required').max(500),
+  subscribedEvents: z.array(z.string().min(1)).min(1).default(['shipment.*']),
+  secretKey: z.string().min(16, 'Secret key must be at least 16 characters').max(128).optional(),
+});
+
+export type CreateWebhookSubscriptionInput = z.infer<typeof createWebhookSubscriptionSchema>;
+
+export const createApiClientSchema = z.object({
+  name: z.string().trim().min(2, 'Client name is required').max(100),
+  sellerId: z.string().uuid().optional(),
+  scopes: z.array(z.string()).default(['shipments:read', 'shipments:write', 'pricing:read', 'tracking:read', 'webhooks:manage']),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export type CreateApiClientInput = z.infer<typeof createApiClientSchema>;
+
