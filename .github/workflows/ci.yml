@@ -10,6 +10,41 @@ jobs:
   lint-test-build:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: courier_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/courier_db?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/courier_db?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: dev-access-super-secret-key-change-in-prod-12345
+      JWT_REFRESH_SECRET: dev-refresh-super-secret-key-change-in-prod-67890
+      API_KEY_ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      KAFKA_BROKERS: ""
+
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
@@ -26,6 +61,15 @@ jobs:
 
       - name: Install Dependencies
         run: pnpm install
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Push Schema to Test Database
+        run: pnpm db:push --accept-data-loss
+
+      - name: Lint Workspace
+        run: pnpm lint
 
       - name: Typecheck Workspace
         run: pnpm typecheck

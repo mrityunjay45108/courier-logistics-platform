@@ -14,7 +14,7 @@ describe('Production Redis & Upstash Integration', () => {
     const health = await redis.ping();
     expect(health.status).toBe('CONNECTED');
     expect(health.latencyMs).toBeGreaterThan(0);
-    expect(health.provider).toContain('Upstash');
+    expect(health.provider).toMatch(/Upstash|Redis/);
   });
 
   it('redis.set() and redis.get() should store and retrieve JSON objects', async () => {
