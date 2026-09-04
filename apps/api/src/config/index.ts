@@ -28,6 +28,17 @@ export const config = {
   paymentProvider: process.env.PAYMENT_PROVIDER || 'mock',
   paymentCurrency: process.env.PAYMENT_CURRENCY || 'INR',
   paymentWebhookSecret: process.env.PAYMENT_WEBHOOK_SECRET || 'whsec_mock_courier_platform_secret_2026',
+  kafka: {
+    brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(',').map((b) => b.trim()),
+    username: process.env.KAFKA_USERNAME,
+    password: process.env.KAFKA_PASSWORD,
+    ssl: process.env.KAFKA_SSL === 'true',
+    saslMechanism: (process.env.KAFKA_SASL_MECHANISM || 'scram-sha-256').toLowerCase(),
+    clientId: process.env.KAFKA_CLIENT_ID || 'courier-logistics',
+    groupId: process.env.KAFKA_GROUP_ID || 'courier-service',
+    connectionTimeout: parseInt(process.env.KAFKA_CONNECTION_TIMEOUT_MS || '10000', 10),
+    requestTimeout: parseInt(process.env.KAFKA_REQUEST_TIMEOUT_MS || '30000', 10),
+  },
 };
 
 // Convenience alias

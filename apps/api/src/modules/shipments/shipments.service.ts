@@ -8,6 +8,7 @@ import {
   ForbiddenError,
 } from '../../utils/errors';
 import { webhookDispatcherService } from '../integrations/webhooks/webhook-dispatcher.service';
+import { kafkaOutboxService, KAFKA_EVENT_TYPES } from '../../infrastructure/kafka';
 import type { CreateShipmentInput } from '@courier/shared';
 import {
   ShipmentStatus,
@@ -23,7 +24,7 @@ export class ShipmentsService {
   /**
    * Create a new shipment booking with package and address snapshots
    */
-  async createShipment(input: CreateShipmentInput, userId: string, role: string) {
+  async createShipment(input: CreateShipmentInput, userId: string, role: string, correlationId?: string) {
     // 1. Resolve Pickup Address Details
     let pickupName = '';
     let pickupPhone = '';
@@ -225,10 +226,33 @@ export class ShipmentsService {
         },
       });
 
-      return createdShipment;
+      // Transactional Outbox Event (Kafka)
+      const outboxRecord = await kafkaOutboxService.recordShipmentEvent(
+        tx,
+        {
+          ...createdShipment,
+          addresses: [
+            { type: 'PICKUP', postalCode: pickupPostalCode },
+            { type: 'DELIVERY', postalCode: input.deliveryAddress.postalCode },
+          ],
+        },
+        KAFKA_EVENT_TYPES.SHIPMENT_CREATED,
+        {
+          correlationId,
+          pickupPincode: pickupPostalCode,
+          deliveryPincode: input.deliveryAddress.postalCode,
+        }
+      );
+
+      return { createdShipment, outboxId: outboxRecord.id };
     });
 
-    const fullShipment = await this.getShipmentById(shipment.id, userId, role);
+    const fullShipment = await this.getShipmentById(shipment.createdShipment.id, userId, role);
+
+    // Fast-path Kafka Outbox publication
+    kafkaOutboxService.publishOutboxRecord(shipment.outboxId).catch((err) => {
+      console.warn('Kafka outbox fast-path publish notice (queued for retry):', err.message);
+    });
 
     // Dispatch outbound webhook for external E-Commerce integrations
     webhookDispatcherService.recordAndDispatch(
@@ -543,9 +567,39 @@ export class ShipmentsService {
   }
 
   /**
+   * Helper to map Prisma ShipmentStatus to permitted Kafka event type
+   */
+  private mapStatusToKafkaEventType(status: ShipmentStatus): string {
+    switch (status) {
+      case ShipmentStatus.CREATED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_CREATED;
+      case ShipmentStatus.PICKUP_SCHEDULED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_PICKUP_SCHEDULED;
+      case ShipmentStatus.PICKED_UP:
+        return KAFKA_EVENT_TYPES.SHIPMENT_PICKED_UP;
+      case ShipmentStatus.IN_TRANSIT:
+        return KAFKA_EVENT_TYPES.SHIPMENT_IN_TRANSIT;
+      case ShipmentStatus.OUT_FOR_DELIVERY:
+        return KAFKA_EVENT_TYPES.SHIPMENT_OUT_FOR_DELIVERY;
+      case ShipmentStatus.DELIVERED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_DELIVERED;
+      case ShipmentStatus.FAILED_DELIVERY:
+        return KAFKA_EVENT_TYPES.SHIPMENT_DELIVERY_FAILED;
+      case ShipmentStatus.CANCELLED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_CANCELLED;
+      case ShipmentStatus.RETURN_INITIATED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_RETURN_INITIATED;
+      case ShipmentStatus.RETURNED:
+        return KAFKA_EVENT_TYPES.SHIPMENT_RETURNED;
+      default:
+        return `shipment.${status.toLowerCase()}`;
+    }
+  }
+
+  /**
    * Cancel an eligible shipment
    */
-  async cancelShipment(id: string, userId: string, role: string, reason?: string) {
+  async cancelShipment(id: string, userId: string, role: string, reason?: string, correlationId?: string) {
     const shipment = await this.getShipmentById(id, userId, role);
 
     if (!canCancelShipment(shipment.status)) {
@@ -554,15 +608,17 @@ export class ShipmentsService {
       );
     }
 
-    await prisma.$transaction([
-      prisma.shipment.update({
+    const { outboxId } = await prisma.$transaction(async (tx) => {
+      const updatedShipment = await tx.shipment.update({
         where: { id },
         data: {
           status: ShipmentStatus.CANCELLED,
           cancelledAt: new Date(),
         },
-      }),
-      prisma.trackingEvent.create({
+        include: { addresses: true },
+      });
+
+      await tx.trackingEvent.create({
         data: {
           shipmentId: id,
           status: ShipmentStatus.CANCELLED,
@@ -572,17 +628,36 @@ export class ShipmentsService {
           isPublic: true,
           createdBy: userId,
         },
-      }),
-      prisma.auditLog.create({
+      });
+
+      await tx.auditLog.create({
         data: {
           action: AuditAction.SHIPMENT_CANCELLED,
           userId,
           details: { shipmentId: id, reason },
         },
-      }),
-    ]);
+      });
+
+      // Transactional Kafka Outbox Event
+      const outbox = await kafkaOutboxService.recordShipmentEvent(
+        tx,
+        updatedShipment,
+        KAFKA_EVENT_TYPES.SHIPMENT_CANCELLED,
+        {
+          correlationId,
+          notes: reason,
+        }
+      );
+
+      return { outboxId: outbox.id };
+    });
 
     const updated = await this.getShipmentById(id, userId, role);
+
+    // Fast-path Kafka Outbox publication
+    kafkaOutboxService.publishOutboxRecord(outboxId).catch((err) => {
+      console.warn('Kafka outbox fast-path publish notice (queued for retry):', err.message);
+    });
 
     // Dispatch cancellation webhook
     webhookDispatcherService.recordAndDispatch(
@@ -602,22 +677,25 @@ export class ShipmentsService {
     newStatus: ShipmentStatus,
     adminUserId: string,
     description?: string,
-    location?: string
+    location?: string,
+    correlationId?: string
   ) {
     const shipment = await prisma.shipment.findUnique({ where: { id } });
     if (!shipment) throw new NotFoundError('Shipment not found');
 
     validateShipmentTransition(shipment.status, newStatus);
 
-    await prisma.$transaction([
-      prisma.shipment.update({
+    const { updated, outboxId } = await prisma.$transaction(async (tx) => {
+      const updatedShipment = await tx.shipment.update({
         where: { id },
         data: {
           status: newStatus,
           ...(newStatus === ShipmentStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
         },
-      }),
-      prisma.trackingEvent.create({
+        include: { events: true, label: true, pickup: true, delivery: true, addresses: true },
+      });
+
+      await tx.trackingEvent.create({
         data: {
           shipmentId: id,
           status: newStatus,
@@ -628,19 +706,34 @@ export class ShipmentsService {
           isPublic: true,
           createdBy: adminUserId,
         },
-      }),
-      prisma.auditLog.create({
+      });
+
+      await tx.auditLog.create({
         data: {
           action: AuditAction.SHIPMENT_STATUS_CHANGED,
           userId: adminUserId,
           details: { from: shipment.status, to: newStatus, description },
         },
-      }),
-    ]);
+      });
 
-    const updated = await prisma.shipment.findUnique({
-      where: { id },
-      include: { events: true, label: true, pickup: true, delivery: true },
+      // Transactional Kafka Outbox Event
+      const eventType = this.mapStatusToKafkaEventType(newStatus);
+      const outbox = await kafkaOutboxService.recordShipmentEvent(
+        tx,
+        updatedShipment,
+        eventType,
+        {
+          correlationId,
+          notes: description,
+        }
+      );
+
+      return { updated: updatedShipment, outboxId: outbox.id };
+    });
+
+    // Fast-path Kafka Outbox publication
+    kafkaOutboxService.publishOutboxRecord(outboxId).catch((err) => {
+      console.warn('Kafka outbox fast-path publish notice (queued for retry):', err.message);
     });
 
     // Dispatch status change webhook

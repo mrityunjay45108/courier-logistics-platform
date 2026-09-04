@@ -9,6 +9,7 @@ export async function createShipment(req: Request, res: Response, next: NextFunc
     const authReq = req as AuthenticatedRequest;
     const { userId, role } = authReq.user!;
     const idempotencyKey = (req.headers['idempotency-key'] as string)?.trim();
+    const correlationId = (req.headers['x-request-id'] || req.headers['x-correlation-id'] || undefined) as string | undefined;
     const clientId = authReq.apiClient?.id || userId;
     const isApiClient = Boolean(authReq.apiClient);
 
@@ -19,7 +20,7 @@ export async function createShipment(req: Request, res: Response, next: NextFunc
         req.body,
         'Shipment',
         async () => {
-          const created = await shipmentsService.createShipment(req.body, userId, role);
+          const created = await shipmentsService.createShipment(req.body, userId, role, correlationId);
           const responsePayload = isApiClient
             ? shipmentsService.formatIntegrationResponse(created)
             : created;
@@ -39,7 +40,7 @@ export async function createShipment(req: Request, res: Response, next: NextFunc
       return;
     }
 
-    const shipment = await shipmentsService.createShipment(req.body, userId, role);
+    const shipment = await shipmentsService.createShipment(req.body, userId, role, correlationId);
     const responsePayload = isApiClient
       ? shipmentsService.formatIntegrationResponse(shipment)
       : shipment;
@@ -152,8 +153,9 @@ export async function cancelShipment(req: Request, res: Response, next: NextFunc
     const authReq = req as AuthenticatedRequest;
     const { userId, role } = authReq.user!;
     const isApiClient = Boolean(authReq.apiClient);
+    const correlationId = (req.headers['x-request-id'] || req.headers['x-correlation-id'] || undefined) as string | undefined;
 
-    const shipment = await shipmentsService.cancelShipment(req.params.id, userId, role, req.body?.reason);
+    const shipment = await shipmentsService.cancelShipment(req.params.id, userId, role, req.body?.reason, correlationId);
     const responsePayload = isApiClient
       ? shipmentsService.formatIntegrationResponse(shipment)
       : shipment;
@@ -169,6 +171,7 @@ export async function cancelByExternalOrder(req: Request, res: Response, next: N
     const authReq = req as AuthenticatedRequest;
     const { userId, role } = authReq.user!;
     const sellerId = authReq.apiClient?.sellerId || (role === 'SELLER' ? userId : null);
+    const correlationId = (req.headers['x-request-id'] || req.headers['x-correlation-id'] || undefined) as string | undefined;
 
     const existing = await shipmentsService.getByExternalOrderId(
       req.params.externalOrderId,
@@ -177,7 +180,7 @@ export async function cancelByExternalOrder(req: Request, res: Response, next: N
       sellerId
     );
 
-    const cancelled = await shipmentsService.cancelShipment(existing.id, userId, role, req.body?.reason);
+    const cancelled = await shipmentsService.cancelShipment(existing.id, userId, role, req.body?.reason, correlationId);
     sendSuccess(res, shipmentsService.formatIntegrationResponse(cancelled), 'Shipment cancelled successfully');
   } catch (error) {
     next(error);
@@ -188,7 +191,8 @@ export async function updateShipmentStatus(req: Request, res: Response, next: Ne
   try {
     const adminUserId = (req as AuthenticatedRequest).user!.userId;
     const { status, description, location } = req.body;
-    const shipment = await shipmentsService.updateStatus(req.params.id, status, adminUserId, description, location);
+    const correlationId = (req.headers['x-request-id'] || req.headers['x-correlation-id'] || undefined) as string | undefined;
+    const shipment = await shipmentsService.updateStatus(req.params.id, status, adminUserId, description, location, correlationId);
     sendSuccess(res, shipment, 'Shipment status updated successfully');
   } catch (error) {
     next(error);

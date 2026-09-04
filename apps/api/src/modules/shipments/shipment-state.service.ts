@@ -24,14 +24,17 @@ const CANCELLABLE_STATUSES: ShipmentStatus[] = [
   ShipmentStatus.PICKUP_SCHEDULED,
 ];
 
+export function canTransition(currentStatus: ShipmentStatus, targetStatus: ShipmentStatus): boolean {
+  if (currentStatus === targetStatus) return true;
+  const allowed = VALID_TRANSITIONS[currentStatus] || [];
+  return allowed.includes(targetStatus);
+}
+
 export function validateShipmentTransition(
   currentStatus: ShipmentStatus,
   targetStatus: ShipmentStatus
 ): void {
-  if (currentStatus === targetStatus) return;
-
-  const allowed = VALID_TRANSITIONS[currentStatus] || [];
-  if (!allowed.includes(targetStatus)) {
+  if (!canTransition(currentStatus, targetStatus)) {
     throw new BadRequestError(
       `Invalid shipment status transition from '${currentStatus}' to '${targetStatus}'.`
     );
@@ -41,3 +44,4 @@ export function validateShipmentTransition(
 export function canCancelShipment(status: ShipmentStatus): boolean {
   return CANCELLABLE_STATUSES.includes(status);
 }
+

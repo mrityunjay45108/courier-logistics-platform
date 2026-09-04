@@ -407,6 +407,18 @@ enum ReturnChargeStatus {
   REFUNDED
 }
 
+enum KafkaOutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum KafkaFailureStatus {
+  UNRESOLVED
+  RESOLVED
+  IGNORED
+}
+
 // ----------------------------------------------------
 // MODELS
 // ----------------------------------------------------
@@ -1355,4 +1367,65 @@ model OutboundWebhookEvent {
   @@index([status, nextAttemptAt])
   @@index([createdAt])
 }
+
+// ----------------------------------------------------
+// KAFKA EVENT STREAMING MODELS
+// ----------------------------------------------------
+
+model KafkaOutboxEvent {
+  id            String            @id @default(uuid())
+  eventId       String            @unique
+  topic         String
+  partitionKey  String
+  eventType     String
+  payload       Json
+  headers       Json?
+  status        KafkaOutboxStatus @default(PENDING)
+  attempts      Int               @default(0)
+  maxAttempts   Int               @default(5)
+  nextAttemptAt DateTime?         @default(now())
+  publishedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([topic])
+  @@index([createdAt])
+}
+
+model KafkaProcessedEvent {
+  id            String   @id @default(uuid())
+  eventId       String
+  consumerGroup String
+  topic         String
+  eventType     String
+  processedAt   DateTime @default(now())
+
+  @@unique([consumerGroup, eventId])
+  @@index([consumerGroup])
+  @@index([processedAt])
+}
+
+model KafkaFailedEvent {
+  id            String             @id @default(uuid())
+  eventId       String
+  topic         String
+  partition     Int?
+  offset        String?
+  consumerGroup String
+  payload       Json
+  errorReason   String
+  stackTrace    String?
+  attempts      Int                @default(1)
+  status        KafkaFailureStatus @default(UNRESOLVED)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([topic])
+  @@index([consumerGroup])
+  @@index([status])
+  @@index([createdAt])
+}
+
 
