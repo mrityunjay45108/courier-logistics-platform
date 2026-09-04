@@ -68,6 +68,9 @@ jobs:
       - name: Push Schema to Test Database
         run: pnpm db:push --accept-data-loss
 
+      - name: Seed Database
+        run: pnpm db:seed
+
       - name: Lint Workspace
         run: pnpm lint
 

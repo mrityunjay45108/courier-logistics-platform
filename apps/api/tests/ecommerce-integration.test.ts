@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import crypto from 'crypto';
 import request from 'supertest';
 import { app } from '../src/app';
+import { prisma } from '../src/lib/prisma';
+import { ShippingZoneCode, ShipmentType, SurchargeType } from '@prisma/client';
 import {
   signWebhookPayload,
   verifyWebhookSignature,
@@ -100,6 +102,126 @@ describe('Idempotency Request Fingerprinting', () => {
 
 describe('E-Commerce Server-to-Server API Endpoints', () => {
   const validApiKey = 'ck_live_ecommerce_test_key_2026';
+
+  beforeAll(async () => {
+    // 1. Ensure a seller user exists for the API client
+    const seller = await prisma.user.upsert({
+      where: { email: 'seller_test_ecom@courier.local' },
+      update: { role: 'SELLER', isActive: true },
+      create: {
+        name: 'Apex Merchant Store',
+        email: 'seller_test_ecom@courier.local',
+        passwordHash: 'dummy_hash',
+        role: 'SELLER',
+        isActive: true,
+      },
+    });
+
+    // 2. Ensure the demo ApiClient exists for validApiKey
+    const keyHash = crypto.createHash('sha256').update(validApiKey).digest('hex');
+    const apiClient = await prisma.apiClient.upsert({
+      where: { keyHash },
+      update: { isActive: true, sellerId: seller.id },
+      create: {
+        name: 'Apex E-Commerce Test Client',
+        keyHash,
+        keyPrefix: validApiKey.substring(0, 8),
+        sellerId: seller.id,
+        scopes: ['shipments:read', 'shipments:write', 'pricing:read', 'tracking:read', 'webhooks:manage'],
+        isActive: true,
+      },
+    });
+
+    // 3. Ensure a WebhookSubscription exists for the client
+    await prisma.webhookSubscription.upsert({
+      where: { id: '00000000-0000-0000-0000-000000000001' },
+      update: { clientId: apiClient.id, isActive: true },
+      create: {
+        id: '00000000-0000-0000-0000-000000000001',
+        clientId: apiClient.id,
+        url: 'https://ecommerce.local/api/v1/shipments/webhooks/courier',
+        secretHash: crypto.createHash('sha256').update('whsec_demo_ecommerce_signing_secret_2026').digest('hex'),
+        secretKey: 'whsec_demo_ecommerce_signing_secret_2026',
+        subscribedEvents: ['shipment.*', 'rto.*'],
+        isActive: true,
+      },
+    });
+
+    // 4. Ensure Shipping Zones exist (NATIONAL & REGIONAL)
+    const natZone = await prisma.shippingZone.upsert({
+      where: { code: ShippingZoneCode.NATIONAL },
+      update: { isActive: true },
+      create: {
+        code: ShippingZoneCode.NATIONAL,
+        name: 'National Zone',
+        description: 'Inter-state express lines',
+        isActive: true,
+      },
+    });
+
+    const regZone = await prisma.shippingZone.upsert({
+      where: { code: ShippingZoneCode.REGIONAL },
+      update: { isActive: true },
+      create: {
+        code: ShippingZoneCode.REGIONAL,
+        name: 'Regional Zone',
+        description: 'Intra-state surface logistics',
+        isActive: true,
+      },
+    });
+
+    // 5. Ensure Serviceability Rules exist for 110001 and 800001
+    await prisma.serviceabilityRule.upsert({
+      where: { pincode: '110001' },
+      update: { isPickupAvailable: true, isDeliveryAvailable: true, isActive: true, zoneId: natZone.id },
+      create: {
+        pincode: '110001',
+        city: 'New Delhi',
+        state: 'Delhi',
+        zoneId: natZone.id,
+        isPickupAvailable: true,
+        isDeliveryAvailable: true,
+        isActive: true,
+      },
+    });
+
+    await prisma.serviceabilityRule.upsert({
+      where: { pincode: '800001' },
+      update: { isPickupAvailable: true, isDeliveryAvailable: true, isActive: true, zoneId: regZone.id },
+      create: {
+        pincode: '800001',
+        city: 'Patna',
+        state: 'Bihar',
+        zoneId: regZone.id,
+        isPickupAvailable: true,
+        isDeliveryAvailable: true,
+        isActive: true,
+      },
+    });
+
+    // 6. Ensure Pricing Rate Card exists for NATIONAL zone prepaid
+    const rateCard = await prisma.pricingRateCard.findFirst({
+      where: { zoneId: natZone.id, shipmentType: ShipmentType.PREPAID, isActive: true },
+    });
+    if (!rateCard) {
+      await prisma.pricingRateCard.create({
+        data: {
+          code: 'RC-NAT-TEST-PRE',
+          name: 'National Test Prepaid Rate Card',
+          zoneId: natZone.id,
+          shipmentType: ShipmentType.PREPAID,
+          baseWeight: 0.5,
+          baseRate: 80.0,
+          additionalWeightUnit: 0.5,
+          additionalWeightRate: 40.0,
+          fuelSurchargeType: SurchargeType.PERCENTAGE,
+          fuelSurchargeValue: 10.0,
+          taxPercentage: 18.0,
+          isActive: true,
+        },
+      });
+    }
+  });
 
   it('GET /api/pricing/serviceability/800001 should succeed with X-Api-Key', async () => {
     const res = await request(app)

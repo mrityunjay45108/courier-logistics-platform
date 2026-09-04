@@ -34,8 +34,7 @@ describe('Kafka Production Readiness Test Suite', () => {
         data: {
           email: `kafka_test_${Date.now()}@example.com`,
           passwordHash: 'dummy_hash',
-          firstName: 'Kafka',
-          lastName: 'Tester',
+          name: 'Kafka Tester',
           role: 'ADMIN',
         },
       });
