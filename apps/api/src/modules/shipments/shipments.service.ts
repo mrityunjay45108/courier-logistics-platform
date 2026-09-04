@@ -245,7 +245,7 @@ export class ShipmentsService {
       );
 
       return { createdShipment, outboxId: outboxRecord.id };
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     const fullShipment = await this.getShipmentById(shipment.createdShipment.id, userId, role);
 
@@ -602,6 +602,10 @@ export class ShipmentsService {
   async cancelShipment(id: string, userId: string, role: string, reason?: string, correlationId?: string) {
     const shipment = await this.getShipmentById(id, userId, role);
 
+    if (shipment.status === ShipmentStatus.CANCELLED) {
+      return shipment; // Idempotent no-op: already cancelled
+    }
+
     if (!canCancelShipment(shipment.status)) {
       throw new BadRequestError(
         `Shipment cannot be cancelled in status '${shipment.status}'. Cancellation is only allowed before pickup.`
@@ -650,7 +654,7 @@ export class ShipmentsService {
       );
 
       return { outboxId: outbox.id };
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     const updated = await this.getShipmentById(id, userId, role);
 
@@ -682,6 +686,10 @@ export class ShipmentsService {
   ) {
     const shipment = await prisma.shipment.findUnique({ where: { id } });
     if (!shipment) throw new NotFoundError('Shipment not found');
+
+    if (shipment.status === newStatus) {
+      return shipment; // Idempotent no-op: already in the target status
+    }
 
     validateShipmentTransition(shipment.status, newStatus);
 
@@ -729,7 +737,7 @@ export class ShipmentsService {
       );
 
       return { updated: updatedShipment, outboxId: outbox.id };
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     // Fast-path Kafka Outbox publication
     kafkaOutboxService.publishOutboxRecord(outboxId).catch((err) => {

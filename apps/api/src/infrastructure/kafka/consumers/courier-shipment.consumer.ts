@@ -4,7 +4,34 @@ import { KafkaEventEnvelope, ShipmentEventData } from '../kafka.types';
 import { EachMessagePayload } from 'kafkajs';
 import { prisma } from '../../../lib/prisma';
 import { canTransition } from '../../../modules/shipments/shipment-state.service';
-import { ShipmentStatus } from '@prisma/client';
+import { Prisma, ShipmentStatus, TrackingEventType } from '@prisma/client';
+
+function mapStatusToTrackingEventType(status: ShipmentStatus): TrackingEventType {
+  switch (status) {
+    case ShipmentStatus.CREATED:
+      return TrackingEventType.SHIPMENT_CREATED;
+    case ShipmentStatus.PICKUP_SCHEDULED:
+      return TrackingEventType.PICKUP_SCHEDULED;
+    case ShipmentStatus.PICKED_UP:
+      return TrackingEventType.PICKED_UP;
+    case ShipmentStatus.IN_TRANSIT:
+      return TrackingEventType.IN_TRANSIT;
+    case ShipmentStatus.OUT_FOR_DELIVERY:
+      return TrackingEventType.OUT_FOR_DELIVERY;
+    case ShipmentStatus.DELIVERED:
+      return TrackingEventType.DELIVERED;
+    case ShipmentStatus.FAILED_DELIVERY:
+      return TrackingEventType.DELIVERY_FAILED;
+    case ShipmentStatus.CANCELLED:
+      return TrackingEventType.CANCELLED;
+    case ShipmentStatus.RETURN_INITIATED:
+      return TrackingEventType.RETURN_REQUESTED;
+    case ShipmentStatus.RETURNED:
+      return TrackingEventType.RETURN_RECEIVED;
+    default:
+      return TrackingEventType.SHIPMENT_CREATED;
+  }
+}
 
 /**
  * Consumer for Courier Shipment Lifecycle Events
@@ -16,7 +43,11 @@ export class CourierShipmentConsumer extends BaseKafkaConsumer {
     super(KAFKA_CONSUMER_GROUPS.COURIER_SHIPMENT_WORKER, [KAFKA_TOPICS.COURIER_SHIPMENT_EVENTS]);
   }
 
-  protected async handleEvent(envelope: KafkaEventEnvelope<ShipmentEventData>, context: EachMessagePayload): Promise<void> {
+  protected async handleEvent(
+    envelope: KafkaEventEnvelope<ShipmentEventData>,
+    context: EachMessagePayload,
+    tx: Prisma.TransactionClient
+  ): Promise<void> {
     const { eventType, data, aggregateId } = envelope;
 
     if (!data || !aggregateId) {
@@ -24,7 +55,7 @@ export class CourierShipmentConsumer extends BaseKafkaConsumer {
       return;
     }
 
-    const shipment = await prisma.shipment.findUnique({
+    const shipment = await tx.shipment.findUnique({
       where: { id: aggregateId },
     });
 
@@ -46,6 +77,29 @@ export class CourierShipmentConsumer extends BaseKafkaConsumer {
         `⚠️ Out-of-order Kafka event ignored: Invalid transition from '${shipment.status}' to '${data.status}' for shipment ${aggregateId}`
       );
       return;
+    }
+
+    // Apply state transition if valid and not already applied
+    if (data.status && shipment.status !== data.status && canTransition(shipment.status, data.status as ShipmentStatus)) {
+      await tx.shipment.update({
+        where: { id: aggregateId },
+        data: {
+          status: data.status as ShipmentStatus,
+          ...(data.status === ShipmentStatus.DELIVERED ? { deliveredAt: new Date(envelope.occurredAt || Date.now()) } : {}),
+        },
+      });
+
+      await tx.trackingEvent.create({
+        data: {
+          shipmentId: aggregateId,
+          status: data.status as ShipmentStatus,
+          eventType: mapStatusToTrackingEventType(data.status as ShipmentStatus),
+          title: `Status: ${data.status.replace(/_/g, ' ')}`,
+          description: `Updated via Kafka event: ${eventType}`,
+          isPublic: true,
+          createdBy: 'kafka-shipment-consumer',
+        },
+      });
     }
 
     console.log(`📊 Processed shipment event ${eventType} for tracking number: ${shipment.trackingNumber}`);

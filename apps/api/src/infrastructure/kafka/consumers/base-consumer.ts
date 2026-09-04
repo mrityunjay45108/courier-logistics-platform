@@ -17,10 +17,11 @@ export abstract class BaseKafkaConsumer {
     public readonly topics: KafkaTopic[]
   ) {}
 
-  /**
-   * Domain-specific event processing to be implemented by child classes
-   */
-  protected abstract handleEvent(envelope: KafkaEventEnvelope, context: EachMessagePayload): Promise<void>;
+  protected abstract handleEvent(
+    envelope: KafkaEventEnvelope,
+    context: EachMessagePayload,
+    tx: Prisma.TransactionClient
+  ): Promise<void>;
 
   /**
    * Start consumer and subscribe to assigned topics
@@ -64,9 +65,10 @@ export abstract class BaseKafkaConsumer {
   }
 
   /**
-   * Process individual message with strict idempotency and DB-DLQ fallback
+   * Process individual message with strict idempotency and DB-DLQ fallback.
+   * Business database changes + KafkaProcessedEvent insertion occur in the SAME PostgreSQL transaction.
    */
-  private async processMessage(context: EachMessagePayload): Promise<void> {
+  public async processMessage(context: EachMessagePayload): Promise<void> {
     const { topic, partition, message } = context;
     const rawValue = message.value?.toString('utf8');
 
@@ -79,7 +81,7 @@ export abstract class BaseKafkaConsumer {
       envelope = JSON.parse(rawValue);
     } catch (parseErr: any) {
       console.error(`❌ Poison message on topic '${topic}': Unparseable JSON. Recording to DB DLQ.`);
-      await this.recordFailedEvent(topic, partition, message.offset, 'INVALID_JSON', parseErr.message, { raw: rawValue });
+      await this.recordFailedEvent(topic, partition, message.offset, 'POISON_PILL', `INVALID_JSON: ${parseErr.message}`, { raw: rawValue });
       return;
     }
 
@@ -90,45 +92,54 @@ export abstract class BaseKafkaConsumer {
       return;
     }
 
-    // 2. Consumer Idempotency Check (Inbox Pattern)
-    const existing = await prisma.kafkaProcessedEvent.findUnique({
-      where: {
-        consumerGroup_eventId: {
-          consumerGroup: this.consumerGroup,
-          eventId: envelope.eventId,
-        },
-      },
-    });
-
-    if (existing) {
-      console.log(
-        JSON.stringify({
-          level: 'info',
-          message: 'Skipping duplicate Kafka event (Idempotent)',
-          consumerGroup: this.consumerGroup,
-          eventId: envelope.eventId,
-          eventType: envelope.eventType,
-          topic,
-          offset: message.offset,
-        })
-      );
-      return;
-    }
-
-    // 3. Process Domain Business Logic
+    // 2 & 3. Atomic PostgreSQL Transaction: Check Inbox, Execute Business Changes, Insert KafkaProcessedEvent
     const start = Date.now();
     try {
-      await this.handleEvent(envelope, context);
+      const alreadyProcessed = await prisma.$transaction(async (tx) => {
+        // Idempotency check inside transaction
+        const existing = await tx.kafkaProcessedEvent.findUnique({
+          where: {
+            consumerGroup_eventId: {
+              consumerGroup: this.consumerGroup,
+              eventId: envelope.eventId,
+            },
+          },
+        });
 
-      // 4. Record Processed Event (Inbox mark)
-      await prisma.kafkaProcessedEvent.create({
-        data: {
-          eventId: envelope.eventId,
-          consumerGroup: this.consumerGroup,
-          topic,
-          eventType: envelope.eventType,
-        },
-      });
+        if (existing) {
+          return true; // Already processed
+        }
+
+        // Execute domain business logic using the transaction client
+        await this.handleEvent(envelope, context, tx);
+
+        // Atomically record processed event in the SAME transaction
+        await tx.kafkaProcessedEvent.create({
+          data: {
+            eventId: envelope.eventId,
+            consumerGroup: this.consumerGroup,
+            topic,
+            eventType: envelope.eventType,
+          },
+        });
+
+        return false;
+      }, { maxWait: 10000, timeout: 25000 });
+
+      if (alreadyProcessed) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            message: 'Skipping duplicate Kafka event (Idempotent)',
+            consumerGroup: this.consumerGroup,
+            eventId: envelope.eventId,
+            eventType: envelope.eventType,
+            topic,
+            offset: message.offset,
+          })
+        );
+        return;
+      }
 
       const processingTimeMs = Date.now() - start;
       console.log(
@@ -145,6 +156,22 @@ export abstract class BaseKafkaConsumer {
         })
       );
     } catch (error: any) {
+      if (error?.code === 'P2002') {
+        // Race condition: another thread/worker committed this [consumerGroup, eventId]
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            message: 'Skipping duplicate Kafka event (Concurrent P2002 unique constraint)',
+            consumerGroup: this.consumerGroup,
+            eventId: envelope.eventId,
+            eventType: envelope.eventType,
+            topic,
+            offset: message.offset,
+          })
+        );
+        return;
+      }
+
       console.error(
         `❌ Error processing Kafka event '${envelope.eventId}' in '${this.consumerGroup}':`,
         error.message
