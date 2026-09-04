@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma } from './prisma';
+import { redis } from './redis';
 import { IdempotencyStatus, Prisma } from '@prisma/client';
 import { ConflictError } from '../utils/errors';
 
@@ -37,7 +38,25 @@ export async function executeIdempotent<T>(
   const canonicalPayload = JSON.stringify(canonicalize(payload || {}));
   const requestHash = crypto.createHash('sha256').update(canonicalPayload).digest('hex');
 
-  // Check for existing record
+  // Fast-path: Check Redis cache first
+  const redisKey = `courier:idempotency:${clientId}:${key}`;
+  const redisCached = await redis.get<{ requestHash: string; status: number; data: T }>(redisKey);
+  if (redisCached) {
+    if (redisCached.requestHash === requestHash) {
+      return {
+        data: redisCached.data,
+        status: redisCached.status,
+        cached: true,
+      };
+    } else {
+      throw new ConflictError(
+        'A request with this Idempotency-Key has already been processed with a different payload',
+        'IDEMPOTENCY_CONFLICT'
+      );
+    }
+  }
+
+  // Check for existing record in DB
   const existing = await prisma.idempotencyKey.findUnique({
     where: {
       clientId_key: {
@@ -103,7 +122,7 @@ export async function executeIdempotent<T>(
   try {
     const result = await action();
 
-    // Store resolved response
+    // Store resolved response in PostgreSQL
     await prisma.idempotencyKey.update({
       where: { id: createdRecord.id },
       data: {
@@ -114,6 +133,9 @@ export async function executeIdempotent<T>(
       },
     });
 
+    // Cache in Redis for 24 hours
+    await redis.set(redisKey, { requestHash, status: result.status, data: result.data }, 86400);
+
     return {
       data: result.data,
       status: result.status,
@@ -121,7 +143,10 @@ export async function executeIdempotent<T>(
     };
   } catch (error) {
     // Clean up failed attempt record so user can retry
-    await prisma.idempotencyKey.delete({ where: { id: createdRecord.id } }).catch(() => {});
+    await Promise.all([
+      prisma.idempotencyKey.delete({ where: { id: createdRecord.id } }).catch(() => {}),
+      redis.del(redisKey),
+    ]);
     throw error;
   }
 }

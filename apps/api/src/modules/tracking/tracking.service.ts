@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma';
+import { redis } from '../../lib/redis';
 import { NotFoundError } from '../../utils/errors';
 import { trackingPublisher, TRACKING_EVENT } from './tracking-publisher';
 import type { PublicTrackingResponse, TrackingEventType } from '@courier/types';
@@ -39,6 +40,9 @@ export class TrackingService {
         shipment: { select: { trackingNumber: true } },
       },
     });
+
+    // Invalidate Redis cache for this tracking number
+    await redis.del(`courier:tracking:${event.shipment.trackingNumber}`);
 
     // Publish to real-time subscribers
     trackingPublisher.emit(TRACKING_EVENT, {
@@ -83,6 +87,10 @@ export class TrackingService {
    */
   async getPublicTracking(trackingNumber: string): Promise<PublicTrackingResponse> {
     const normalizedNumber = trackingNumber.trim();
+    const cacheKey = `courier:tracking:${normalizedNumber}`;
+
+    const cached = await redis.get<PublicTrackingResponse>(cacheKey);
+    if (cached) return cached;
 
     const shipment = await prisma.shipment.findUnique({
       where: { trackingNumber: normalizedNumber },
@@ -120,7 +128,7 @@ export class TrackingService {
       createdAt: e.createdAt || e.timestamp || new Date(),
     }));
 
-    return {
+    const response: PublicTrackingResponse = {
       trackingNumber: shipment.trackingNumber,
       status: shipment.status,
       carrier: shipment.carrier,
@@ -135,6 +143,9 @@ export class TrackingService {
       timeline,
       events: timeline,
     } as any;
+
+    await redis.set(cacheKey, response, 15); // 15 seconds cache
+    return response;
   }
 }
 

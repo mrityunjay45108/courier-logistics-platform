@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma } from '../../lib/prisma';
+import { redis } from '../../lib/redis';
 import { NotFoundError, BadRequestError } from '../../utils/errors';
 import { calculateVolumetricWeight } from './calculators/volumetric.calculator';
 import { calculateChargeableWeight } from './calculators/weight.calculator';
@@ -168,10 +169,14 @@ export class PricingService {
   }
 
   /**
-   * Admin pricing views: Zones, Rules & Rate Cards
+   * Admin pricing views: Zones, Rules & Rate Cards (Redis Cached)
    */
   async listZones() {
-    return await prisma.shippingZone.findMany({
+    const cacheKey = 'courier:zones';
+    const cached = await redis.get(cacheKey);
+    if (cached) return cached;
+
+    const zones = await prisma.shippingZone.findMany({
       include: {
         _count: {
           select: { serviceabilityRules: true, rateCards: true },
@@ -179,13 +184,23 @@ export class PricingService {
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    await redis.set(cacheKey, zones, 3600); // 1 hour TTL
+    return zones;
   }
 
   async listRateCards() {
-    return await prisma.pricingRateCard.findMany({
+    const cacheKey = 'courier:rate-cards';
+    const cached = await redis.get(cacheKey);
+    if (cached) return cached;
+
+    const rateCards = await prisma.pricingRateCard.findMany({
       include: { zone: true },
       orderBy: { createdAt: 'desc' },
     });
+
+    await redis.set(cacheKey, rateCards, 1800); // 30 mins TTL
+    return rateCards;
   }
 
   async listServiceability(query: { page?: number; limit?: number; search?: string }) {
@@ -217,19 +232,25 @@ export class PricingService {
   }
 
   async checkPincode(pincode: string) {
+    const cacheKey = `courier:pincode:${pincode}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return cached;
+
     const rule = await prisma.serviceabilityRule.findUnique({
       where: { pincode },
       include: { zone: true },
     });
 
     if (!rule) {
-      return {
+      const negativeResult = {
         serviceable: false,
         message: `Pincode ${pincode} is currently not in our direct service network.`,
       };
+      await redis.set(cacheKey, negativeResult, 600); // 10 mins cache for missing
+      return negativeResult;
     }
 
-    return {
+    const result = {
       serviceable: rule.isActive && (rule.isPickupAvailable || rule.isDeliveryAvailable),
       pincode: rule.pincode,
       city: rule.city,
@@ -238,6 +259,9 @@ export class PricingService {
       isPickupAvailable: rule.isPickupAvailable,
       isDeliveryAvailable: rule.isDeliveryAvailable,
     };
+
+    await redis.set(cacheKey, result, 3600); // 1 hour TTL
+    return result;
   }
 }
 

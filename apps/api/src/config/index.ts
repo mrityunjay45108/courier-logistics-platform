@@ -20,6 +20,8 @@ export const config = {
   },
   databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/courier_db?schema=public',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
+  upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN,
   logLevel: process.env.LOG_LEVEL || 'info',
   resendApiKey: process.env.RESEND_API_KEY,
   emailFrom: process.env.EMAIL_FROM || 'onboarding@resend.dev',

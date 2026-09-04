@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../../lib/prisma';
+import { redis } from '../../lib/redis';
 import { sendSuccess, sendError } from '../../utils/response';
 
 export async function getLiveness(req: Request, res: Response): Promise<void> {
@@ -10,11 +11,18 @@ export async function getReadiness(req: Request, res: Response, next: NextFuncti
   try {
     // Ping the database
     await prisma.$queryRaw`SELECT 1`;
+
+    // Ping Redis
+    const redisHealth = await redis.ping();
+
     sendSuccess(
       res,
       {
         status: 'READY',
         database: 'CONNECTED',
+        redis: redisHealth.status,
+        redisLatencyMs: redisHealth.latencyMs,
+        redisProvider: redisHealth.provider,
         timestamp: new Date().toISOString(),
       },
       'Service is ready to accept traffic'

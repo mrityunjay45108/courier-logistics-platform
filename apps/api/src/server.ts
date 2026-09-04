@@ -1,6 +1,7 @@
 import { app } from './app';
 import { config } from './config';
 import { prisma } from './lib/prisma';
+import { redis } from './lib/redis';
 
 const server = app.listen(config.port, () => {
   console.log(`🚀 Courier & Logistics API running on port ${config.port} [${config.env}]`);
@@ -14,11 +15,14 @@ const gracefulShutdown = async (signal: string) => {
   server.close(async () => {
     console.log('🔒 Closed active HTTP connections.');
     try {
-      await prisma.$disconnect();
-      console.log('💾 Disconnected from PostgreSQL database.');
+      await Promise.all([
+        prisma.$disconnect(),
+        redis.disconnect(),
+      ]);
+      console.log('💾 Disconnected from PostgreSQL database and Redis.');
       process.exit(0);
     } catch (err) {
-      console.error('Error during database disconnect:', err);
+      console.error('Error during database/redis disconnect:', err);
       process.exit(1);
     }
   });

@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma';
+import { redis } from '../../lib/redis';
 import { NotFoundError } from '../../utils/errors';
 import {
   ShipmentStatus,
@@ -176,11 +177,18 @@ export class AdminService {
     await prisma.$queryRaw`SELECT 1`;
     const dbLatencyMs = Date.now() - dbStart;
 
+    const redisHealth = await redis.ping();
+
     return {
       status: 'UP',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
       database: { status: 'CONNECTED', latencyMs: dbLatencyMs },
+      redis: {
+        status: redisHealth.status,
+        latencyMs: redisHealth.latencyMs,
+        provider: redisHealth.provider,
+      },
       memory: {
         rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
