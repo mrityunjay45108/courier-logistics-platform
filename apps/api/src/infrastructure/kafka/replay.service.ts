@@ -93,6 +93,31 @@ export class KafkaReplayService {
   }
 
   /**
+   * Get single failed event by ID
+   */
+  async getFailedEvent(failedEventId: string) {
+    return prisma.kafkaFailedEvent.findUnique({
+      where: { id: failedEventId },
+    });
+  }
+
+  /**
+   * Mark event as manually resolved
+   */
+  async resolveEvent(failedEventId: string): Promise<boolean> {
+    const existing = await prisma.kafkaFailedEvent.findUnique({
+      where: { id: failedEventId },
+    });
+    if (!existing) return false;
+
+    await prisma.kafkaFailedEvent.update({
+      where: { id: failedEventId },
+      data: { status: KafkaFailureStatus.RESOLVED },
+    });
+    return true;
+  }
+
+  /**
    * Ignore a poison pill event to remove from active failure queues
    */
   async ignoreEvent(failedEventId: string): Promise<void> {

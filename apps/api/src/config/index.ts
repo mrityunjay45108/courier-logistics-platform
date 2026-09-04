@@ -39,7 +39,14 @@ export const config = {
     connectionTimeout: parseInt(process.env.KAFKA_CONNECTION_TIMEOUT_MS || '10000', 10),
     requestTimeout: parseInt(process.env.KAFKA_REQUEST_TIMEOUT_MS || '30000', 10),
   },
+  alertThresholds: {
+    kafkaOutboxWarning: parseInt(process.env.KAFKA_OUTBOX_WARNING_THRESHOLD || '50', 10),
+    kafkaFailedEventWarning: parseInt(process.env.KAFKA_FAILED_EVENT_WARNING_THRESHOLD || '10', 10),
+    kafkaConsumerLagWarning: parseInt(process.env.KAFKA_CONSUMER_LAG_WARNING_THRESHOLD || '100', 10),
+    courierErrorRateWarning: parseFloat(process.env.COURIER_ERROR_RATE_THRESHOLD || '0.05'),
+  },
 };
+
 
 // Convenience alias
 export const env = {

@@ -7,3 +7,4 @@ export * from './consumers/base-consumer';
 export * from './consumers/ecommerce-order.consumer';
 export * from './consumers/courier-shipment.consumer';
 export * from './replay.service';
+export * from './kafka-observability.service';

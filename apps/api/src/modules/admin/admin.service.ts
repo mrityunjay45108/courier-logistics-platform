@@ -1,6 +1,8 @@
 import { prisma } from '../../lib/prisma';
 import { redis } from '../../lib/redis';
 import { NotFoundError } from '../../utils/errors';
+import { kafkaClientManager } from '../../infrastructure/kafka/kafka.client';
+import { courierObservabilityService } from '../integrations/courier-observability.service';
 import {
   ShipmentStatus,
   ExceptionStatus,
@@ -177,7 +179,11 @@ export class AdminService {
     await prisma.$queryRaw`SELECT 1`;
     const dbLatencyMs = Date.now() - dbStart;
 
-    const redisHealth = await redis.ping();
+    const [redisHealth, kafkaHealth, courierHealth] = await Promise.all([
+      redis.ping().catch(() => ({ status: 'DISCONNECTED', latencyMs: 0, provider: 'none' })),
+      kafkaClientManager.checkHealth().catch(() => ({ status: 'DISCONNECTED' as const })),
+      courierObservabilityService.checkHealth().catch(() => ({ status: 'UNKNOWN' as const, errorRate: 0, failedWebhooks: 0 })),
+    ]);
 
     return {
       status: 'UP',
@@ -188,6 +194,16 @@ export class AdminService {
         status: redisHealth.status,
         latencyMs: redisHealth.latencyMs,
         provider: redisHealth.provider,
+      },
+      kafka: {
+        status: kafkaHealth.status,
+        latencyMs: (kafkaHealth as any).latencyMs,
+        topicLimit: '5/5 (Strict)',
+      },
+      courier: {
+        status: courierHealth.status,
+        errorRate: courierHealth.errorRate,
+        failedWebhooks: courierHealth.failedWebhooks,
       },
       memory: {
         rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),

@@ -59,11 +59,45 @@ class KafkaClientManager {
     return this.kafka;
   }
 
+  private cachedHealth: { status: 'CONNECTED' | 'FALLBACK' | 'DISCONNECTED'; latencyMs?: number; checkedAt: number } | null = null;
+
   /**
    * Check if Kafka is enabled and configured
    */
   isEnabled(): boolean {
     return this.isConfigured && this.kafka !== null;
+  }
+
+  /**
+   * Health probe for Kafka cluster with 10-second cache to prevent broker connection churn
+   */
+  async checkHealth(): Promise<{ status: 'CONNECTED' | 'FALLBACK' | 'DISCONNECTED'; latencyMs?: number }> {
+    if (!this.isEnabled()) {
+      return { status: 'FALLBACK' };
+    }
+
+    const now = Date.now();
+    if (this.cachedHealth && now - this.cachedHealth.checkedAt < 10000) {
+      return { status: this.cachedHealth.status, latencyMs: this.cachedHealth.latencyMs };
+    }
+
+    const start = Date.now();
+    let admin: Admin | null = null;
+    try {
+      admin = this.kafka!.admin();
+      await admin.connect();
+      await admin.listTopics();
+      const latencyMs = Date.now() - start;
+      await admin.disconnect().catch(() => {});
+      this.cachedHealth = { status: 'CONNECTED', latencyMs, checkedAt: now };
+      return { status: 'CONNECTED', latencyMs };
+    } catch {
+      if (admin) {
+        await admin.disconnect().catch(() => {});
+      }
+      this.cachedHealth = { status: 'DISCONNECTED', checkedAt: now };
+      return { status: 'DISCONNECTED' };
+    }
   }
 
   /**

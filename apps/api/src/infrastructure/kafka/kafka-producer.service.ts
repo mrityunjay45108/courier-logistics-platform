@@ -2,6 +2,8 @@ import { Producer, Partitioners } from 'kafkajs';
 import { kafkaClientManager } from './kafka.client';
 import { PERMITTED_KAFKA_TOPICS, KafkaTopic } from './kafka.constants';
 import { KafkaEventEnvelope, KafkaPublishResult } from './kafka.types';
+import { kafkaObservabilityService } from './kafka-observability.service';
+import { logStructured } from '../../utils/sanitizer';
 
 /**
  * Production Kafka Event Producer
@@ -91,22 +93,22 @@ export class KafkaProducerService {
       const meta = result[0];
       const processingTimeMs = Date.now() - start;
 
+      kafkaObservabilityService.recordProducerSuccess(topic, processingTimeMs);
+
       // Structured logging without secrets
-      console.log(
-        JSON.stringify({
-          level: 'info',
-          message: 'Kafka event published',
-          eventId: envelope.eventId,
-          eventType: envelope.eventType,
-          aggregateId: envelope.aggregateId,
-          topic,
-          partition: meta.partition,
-          offset: meta.offset,
-          partitionKey,
-          correlationId: envelope.correlationId,
-          processingTimeMs,
-        })
-      );
+      logStructured({
+        level: 'info',
+        message: 'Kafka event published',
+        eventId: envelope.eventId,
+        eventType: envelope.eventType,
+        aggregateId: envelope.aggregateId,
+        topic,
+        partition: meta.partition,
+        offset: meta.offset,
+        partitionKey,
+        correlationId: envelope.correlationId,
+        processingTimeMs,
+      });
 
       return {
         topic,
@@ -116,7 +118,15 @@ export class KafkaProducerService {
         partitionKey,
       };
     } catch (err: any) {
-      console.error(`❌ Failed to publish Kafka event '${envelope.eventId}' to '${topic}':`, err.message);
+      kafkaObservabilityService.recordProducerFailure(topic, err.message);
+      logStructured({
+        level: 'error',
+        message: `Failed to publish Kafka event to '${topic}'`,
+        eventId: envelope.eventId,
+        eventType: envelope.eventType,
+        topic,
+        error: err.message,
+      });
       throw err;
     }
   }

@@ -25,6 +25,11 @@ import {
   Calendar,
   X,
   ExternalLink,
+  Radio,
+  RotateCw,
+  Layers,
+  AlertOctagon,
+  Zap,
 } from 'lucide-react';
 
 export const AdminOperationsPage: React.FC = () => {
@@ -47,6 +52,13 @@ export const AdminOperationsPage: React.FC = () => {
   const [partners, setPartners] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [systemHealth, setSystemHealth] = useState<any | null>(null);
+
+  // Kafka & Operations Telemetry State
+  const [kafkaStats, setKafkaStats] = useState<any | null>(null);
+  const [outboxStats, setOutboxStats] = useState<any | null>(null);
+  const [failedEvents, setFailedEvents] = useState<any[]>([]);
+  const [integrationsStats, setIntegrationsStats] = useState<any | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Exception resolution modal
   const [resolveModal, setResolveModal] = useState(false);
@@ -80,10 +92,60 @@ export const AdminOperationsPage: React.FC = () => {
 
       const shipRes = await shipmentsApi.listShipments({ limit: 20 });
       if (shipRes.data.success && shipRes.data.data?.items) setShipments(shipRes.data.data.items);
+
+      // Async fetch observability and Kafka telemetry
+      adminApi.getKafkaStats().then((res) => res.data?.data && setKafkaStats(res.data.data)).catch(() => null);
+      adminApi.getKafkaOutboxStats().then((res) => res.data?.data && setOutboxStats(res.data.data)).catch(() => null);
+      adminApi.listKafkaFailedEvents().then((res) => res.data?.data?.items && setFailedEvents(res.data.data.items)).catch(() => null);
+      adminApi.getIntegrationsStats().then((res) => res.data?.data && setIntegrationsStats(res.data.data)).catch(() => null);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReplayEvent = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await adminApi.replayKafkaFailedEvent(id);
+      alert('Event replayed successfully via Kafka producer');
+      const res = await adminApi.listKafkaFailedEvents();
+      if (res.data?.data?.items) setFailedEvents(res.data.data.items);
+      const outbox = await adminApi.getKafkaOutboxStats();
+      if (outbox.data?.data) setOutboxStats(outbox.data.data);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to replay event');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResolveEvent = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await adminApi.resolveKafkaFailedEvent(id);
+      alert('Event marked as resolved');
+      const res = await adminApi.listKafkaFailedEvents();
+      if (res.data?.data?.items) setFailedEvents(res.data.data.items);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to resolve event');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleIgnoreEvent = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await adminApi.ignoreKafkaFailedEvent(id);
+      alert('Event marked as ignored');
+      const res = await adminApi.listKafkaFailedEvents();
+      if (res.data?.data?.items) setFailedEvents(res.data.data.items);
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to ignore event');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -245,7 +307,7 @@ export const AdminOperationsPage: React.FC = () => {
 
       {/* Main Operations Tabs */}
       <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg text-xs font-semibold overflow-x-auto">
-        {['DASHBOARD', 'SHIPMENTS', 'EXCEPTIONS', 'RETURNS', 'RIDERS', 'ACTIVITY', 'HEALTH'].map((tab) => (
+        {['DASHBOARD', 'SHIPMENTS', 'EXCEPTIONS', 'RETURNS', 'RIDERS', 'ACTIVITY', 'HEALTH', 'KAFKA & OPERATIONS'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -432,6 +494,245 @@ export const AdminOperationsPage: React.FC = () => {
           </div>
         </Card>
       )}
+
+      {/* Tab 7: KAFKA & PRODUCTION OPERATIONS */}
+      {activeTab === 'KAFKA & OPERATIONS' && (
+        <div className="space-y-6">
+          {/* Active Alerts Banner if any */}
+          {kafkaStats?.alerts && kafkaStats.alerts.length > 0 && (
+            <div className="space-y-2">
+              {kafkaStats.alerts.map((alert: any) => (
+                <div
+                  key={alert.id}
+                  className={`p-4 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                    alert.severity === 'CRITICAL'
+                      ? 'bg-rose-50 border-rose-300 text-rose-800'
+                      : 'bg-amber-50 border-amber-300 text-amber-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertOctagon className="w-5 h-5 flex-shrink-0" />
+                    <div>
+                      <span className="font-bold uppercase tracking-wider text-[11px]">{alert.id}</span>
+                      <p className="mt-0.5">{alert.message}</p>
+                    </div>
+                  </div>
+                  <Badge variant={alert.severity === 'CRITICAL' ? 'destructive' : 'outline'}>
+                    {alert.severity}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 4 Infrastructure Tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Kafka Tile */}
+            <Card className="p-4 border-slate-200">
+              <div className="flex justify-between items-start">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase">Kafka Streaming</span>
+                <Badge variant={kafkaStats?.cluster?.configured ? 'secondary' : 'destructive'}>
+                  {kafkaStats?.cluster?.configured ? 'CONNECTED' : 'FALLBACK'}
+                </Badge>
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-2">
+                5 / 5 Topics
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Avg Latency: <span className="font-semibold text-slate-800">{kafkaStats?.runtime?.consumer?.averageLatencyMs ?? 0}ms</span>
+              </p>
+              <div className="text-[10px] text-emerald-600 mt-2 font-medium">
+                At-least-once + Idempotent Inbox
+              </div>
+            </Card>
+
+            {/* Outbox Tile */}
+            <Card className="p-4 border-slate-200">
+              <div className="flex justify-between items-start">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase">Transactional Outbox</span>
+                <span className={`text-xs font-bold ${outboxStats?.pendingCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {outboxStats?.pendingCount ?? 0} Pending
+                </span>
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-2">
+                {outboxStats?.publishedCount ?? 0} <span className="text-xs font-normal text-slate-400">Published</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Retries: <span className="font-semibold">{outboxStats?.totalRetryAttempts ?? 0}</span> • Failed: <span className="font-semibold text-rose-600">{outboxStats?.failedCount ?? 0}</span>
+              </p>
+              <div className="text-[10px] text-slate-400 mt-2">
+                Oldest: {outboxStats?.oldestPendingAgeSeconds ? `${outboxStats.oldestPendingAgeSeconds}s` : '0s'}
+              </div>
+            </Card>
+
+            {/* DLQ Tile */}
+            <Card className="p-4 border-slate-200">
+              <div className="flex justify-between items-start">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase">PostgreSQL DLQ</span>
+                <Badge variant={kafkaStats?.failedEvents?.unresolvedCount > 0 ? 'destructive' : 'outline'}>
+                  {kafkaStats?.failedEvents?.unresolvedCount ?? 0} Unresolved
+                </Badge>
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-2">
+                {kafkaStats?.failedEvents?.resolvedCount ?? 0} <span className="text-xs font-normal text-slate-400">Resolved</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Ignored: {kafkaStats?.failedEvents?.ignoredCount ?? 0} • Replays: {kafkaStats?.failedEvents?.totalReplayAttempts ?? 0}
+              </p>
+              <div className="text-[10px] text-slate-400 mt-2">
+                Zero Kafka DLQ topics created
+              </div>
+            </Card>
+
+            {/* Integrations Tile */}
+            <Card className="p-4 border-slate-200">
+              <div className="flex justify-between items-start">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase">Courier Integrations</span>
+                <Badge variant={integrationsStats?.errorRate > 0.05 ? 'destructive' : 'secondary'}>
+                  {integrationsStats?.errorRate > 0.05 ? 'DEGRADED' : 'HEALTHY'}
+                </Badge>
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-2">
+                {((1 - (integrationsStats?.errorRate || 0)) * 100).toFixed(1)}% <span className="text-xs font-normal text-slate-400">Success</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Outbound Webhooks: <span className="text-emerald-600 font-semibold">{integrationsStats?.outboundWebhooks?.deliveredCount ?? 0} sent</span>
+              </p>
+              <div className="text-[10px] text-slate-400 mt-2">
+                Failed Webhooks: {integrationsStats?.outboundWebhooks?.failedCount ?? 0}
+              </div>
+            </Card>
+          </div>
+
+          {/* Outbox Event Distribution & Consignments Lifecycle */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card className="p-5 border-slate-200">
+              <h3 className="font-bold text-slate-900 text-sm mb-3">Outbox Event Type Breakdown</h3>
+              {outboxStats?.eventTypeDistribution && outboxStats.eventTypeDistribution.length > 0 ? (
+                <div className="space-y-2">
+                  {outboxStats.eventTypeDistribution.map((item: any) => (
+                    <div key={item.eventType} className="flex justify-between items-center text-xs py-1.5 border-b border-slate-100">
+                      <span className="font-mono text-sky-800 font-medium">{item.eventType}</span>
+                      <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-xs">No outbox events recorded yet.</div>
+              )}
+            </Card>
+
+            <Card className="p-5 border-slate-200">
+              <h3 className="font-bold text-slate-900 text-sm mb-3">Shipment Lifecycle Statuses</h3>
+              {summary?.statusBreakdown && summary.statusBreakdown.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {summary.statusBreakdown.map((s: any) => (
+                    <div key={s.status} className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                      <span className="text-[10px] text-slate-500 font-semibold uppercase">{s.status}</span>
+                      <p className="text-base font-black text-slate-900 mt-0.5">{s.count}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-slate-400 text-xs">No shipments found.</div>
+              )}
+            </Card>
+          </div>
+
+          {/* Failed Events Dead Letter Queue (PostgreSQL DLQ) Table */}
+          <Card className="p-5 border-slate-200">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">PostgreSQL Dead Letter Queue (DLQ)</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Poison messages & processing failures captured for inspection and replay</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => fetchDashboardData()} className="text-xs">
+                <RotateCw className="w-3.5 h-3.5 mr-1" /> Refresh
+              </Button>
+            </div>
+
+            {failedEvents.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs">
+                ✅ Zero unresolved DLQ events. System running cleanly.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase bg-slate-50">
+                      <th className="p-2.5">Event ID</th>
+                      <th className="p-2.5">Topic & Group</th>
+                      <th className="p-2.5">Error Reason</th>
+                      <th className="p-2.5">Attempts</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {failedEvents.map((evt: any) => (
+                      <tr key={evt.id} className="hover:bg-slate-50/70">
+                        <td className="p-2.5 font-mono text-[11px] font-medium text-slate-800">
+                          {evt.eventId}
+                        </td>
+                        <td className="p-2.5">
+                          <div className="font-mono text-[11px] text-sky-700">{evt.topic}</div>
+                          <div className="text-[10px] text-slate-400">{evt.consumerGroup}</div>
+                        </td>
+                        <td className="p-2.5 max-w-xs truncate text-rose-700 font-mono text-[11px]" title={evt.errorReason}>
+                          {evt.errorReason}
+                        </td>
+                        <td className="p-2.5 font-semibold text-slate-700">
+                          {evt.attempts}
+                        </td>
+                        <td className="p-2.5">
+                          <Badge variant={evt.status === 'UNRESOLVED' ? 'destructive' : evt.status === 'RESOLVED' ? 'secondary' : 'outline'}>
+                            {evt.status}
+                          </Badge>
+                        </td>
+                        <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                          {evt.status === 'UNRESOLVED' ? (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={actionLoading === evt.id}
+                                onClick={() => handleReplayEvent(evt.id)}
+                                className="text-[11px] h-7 px-2.5 bg-sky-600 hover:bg-sky-500 text-white"
+                              >
+                                {actionLoading === evt.id ? 'Replaying...' : 'Replay'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={actionLoading === evt.id}
+                                onClick={() => handleResolveEvent(evt.id)}
+                                className="text-[11px] h-7 px-2 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                              >
+                                Resolve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={actionLoading === evt.id}
+                                onClick={() => handleIgnoreEvent(evt.id)}
+                                className="text-[11px] h-7 px-2 text-slate-500"
+                              >
+                                Ignore
+                              </Button>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-mono">No action needed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
 
       {/* Resolve Exception Modal */}
       {resolveModal && (

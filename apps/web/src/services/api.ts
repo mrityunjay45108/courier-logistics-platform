@@ -194,6 +194,14 @@ export const adminApi = {
   resolveException: (id: string, resolutionNotes: string) => apiClient.patch<ApiResponse<null>>(`/admin/exceptions/${id}/resolve`, { resolutionNotes }),
   listActivity: (limit?: number) => apiClient.get<ApiResponse<any[]>>('/admin/activity', { params: { limit } }),
   getSystemHealth: () => apiClient.get<ApiResponse<any>>('/admin/system-health'),
+  getKafkaStats: () => apiClient.get<ApiResponse<any>>('/admin/kafka/stats'),
+  getKafkaOutboxStats: () => apiClient.get<ApiResponse<any>>('/admin/kafka/outbox/stats'),
+  listKafkaFailedEvents: (params?: any) => apiClient.get<ApiResponse<any>>('/admin/kafka/failed-events', { params }),
+  getKafkaFailedEvent: (id: string) => apiClient.get<ApiResponse<any>>(`/admin/kafka/failed-events/${id}`),
+  replayKafkaFailedEvent: (id: string) => apiClient.post<ApiResponse<any>>(`/admin/kafka/failed-events/${id}/replay`),
+  resolveKafkaFailedEvent: (id: string) => apiClient.post<ApiResponse<any>>(`/admin/kafka/failed-events/${id}/resolve`),
+  ignoreKafkaFailedEvent: (id: string) => apiClient.post<ApiResponse<any>>(`/admin/kafka/failed-events/${id}/ignore`),
+  getIntegrationsStats: () => apiClient.get<ApiResponse<any>>('/admin/integrations/stats'),
 };
 
 export const paymentsApi = {
