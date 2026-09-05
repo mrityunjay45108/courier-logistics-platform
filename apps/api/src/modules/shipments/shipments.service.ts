@@ -22,7 +22,7 @@ import {
 
 export class ShipmentsService {
   /**
-   * Create a new shipment booking with package and address snapshots
+   * Create a new shipment booking with package and address snapshot
    */
   async createShipment(input: CreateShipmentInput, userId: string, role: string, correlationId?: string) {
     // 1. Resolve Pickup Address Details

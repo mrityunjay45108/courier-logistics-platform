@@ -58,7 +58,7 @@ export async function updateTaskStatus(req: Request, res: Response, next: NextFu
   }
 }
 
-// Admin handlers
+// Admin handler
 export async function listAllPartners(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { status, availability } = req.query;

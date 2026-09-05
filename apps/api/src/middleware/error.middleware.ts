@@ -11,7 +11,7 @@ export const errorHandler: ErrorRequestHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ): void => {
-  // Handle Zod Validation Error
+  // Handle Zod Validations Error
   if (err instanceof ZodError) {
     const formattedErrors = err.errors.map((e) => ({
       field: e.path.join('.'),
