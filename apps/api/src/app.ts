@@ -33,7 +33,19 @@ export function createApp(): Express {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-request-id',
+        'X-Api-Key',
+        'x-api-key',
+        'X-Signature',
+        'x-signature',
+        'X-Timestamp',
+        'x-timestamp',
+        'Idempotency-Key',
+        'idempotency-key',
+      ],
     })
   );
 
@@ -45,11 +57,11 @@ export function createApp(): Express {
   // Structured Logging
   app.use(requestLogger);
 
-  // Health and Diagnostic probes
+  // Health and Diagnostic probes (excluded from rate limiting)
   app.use('/', healthRoutes);
   app.use('/api', healthRoutes);
 
-  // Domain API Routes
+  // Domain API Routes (protected by rate limiting)
   app.use('/api', apiRoutes);
 
   // 404 Handler

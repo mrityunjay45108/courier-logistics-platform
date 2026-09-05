@@ -16,6 +16,11 @@ const server = app.listen(config.port, () => {
   console.log(`🌐 Ready check available at: http://localhost:${config.port}/ready`);
 });
 
+// Production HTTP Connection Timeouts (compatible with reverse proxies & ALBs)
+server.headersTimeout = 65000;
+server.keepAliveTimeout = 61000;
+server.requestTimeout = 30000;
+
 // Initialize Kafka background services if configured
 if (config.kafka.brokers.length > 0 && kafkaClientManager.isEnabled()) {
   console.log('🚀 Initializing Kafka integration with Aiven cluster...');
@@ -45,42 +50,66 @@ if (config.kafka.brokers.length > 0 && kafkaClientManager.isEnabled()) {
   console.log('ℹ️ Kafka integration running in offline/outbox-only mode.');
 }
 
+let isShuttingDown = false;
+
 // Graceful shutdown handling
-const gracefulShutdown = async (signal: string) => {
-  console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+export const gracefulShutdown = async (signal: string, exitProcess = true): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n🛑 Received ${signal}. Starting orderly graceful shutdown...`);
 
-  // Stop Outbox worker immediately
-  kafkaOutboxService.stopWorker();
-
-  // Stop Kafka consumers & disconnect producer
-  await Promise.allSettled([
-    ecommerceOrderConsumer.stop(),
-    courierShipmentConsumer.stop(),
-    kafkaProducerService.disconnect(),
-  ]);
-
-  server.close(async () => {
-    console.log('🔒 Closed active HTTP connections.');
-    try {
-      await Promise.all([
-        prisma.$disconnect(),
-        redis.disconnect(),
-      ]);
-      console.log('💾 Disconnected from PostgreSQL database and Redis.');
-      process.exit(0);
-    } catch (err) {
-      console.error('Error during database/redis disconnect:', err);
-      process.exit(1);
-    }
-  });
-
-  // Force exit after 10 seconds if lingering connections exist
-  setTimeout(() => {
+  // Force exit after 10 seconds if lingering connections or queries exist
+  const forceTimeout = setTimeout(() => {
     console.error('⚠️ Forcing server shutdown after timeout.');
-    process.exit(1);
+    if (exitProcess) process.exit(1);
   }, 10000);
+  forceTimeout.unref();
+
+  try {
+    // 1. Stop Outbox background worker
+    kafkaOutboxService.stopWorker();
+
+    // 2. Stop Kafka consumers and flush/disconnect producer cleanly
+    await Promise.allSettled([
+      ecommerceOrderConsumer.stop(),
+      courierShipmentConsumer.stop(),
+      kafkaProducerService.disconnect(),
+    ]);
+
+    // 3. Stop accepting new HTTP requests and wait for in-flight requests
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        console.log('🔒 Closed active HTTP server connections.');
+        resolve();
+      });
+    });
+
+    // 4. Disconnect from persistence tiers (PostgreSQL and Redis)
+    await Promise.allSettled([
+      prisma.$disconnect(),
+      redis.disconnect(),
+    ]);
+    console.log('💾 Cleanly disconnected from PostgreSQL and Redis.');
+
+    clearTimeout(forceTimeout);
+    if (exitProcess) process.exit(0);
+  } catch (err) {
+    console.error('Error during graceful shutdown:', err);
+    if (exitProcess) process.exit(1);
+  }
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught Exception:', err);
+  gracefulShutdown('uncaughtException');
+});
+
+export { server };
 

@@ -1,0 +1,61 @@
+﻿version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: courier-api:production
+    container_name: courier-api-prod
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: 
+      DIRECT_URL: 
+      REDIS_URL: 
+      JWT_ACCESS_SECRET: 
+      JWT_REFRESH_SECRET: 
+      KAFKA_BROKERS: 
+      KAFKA_USERNAME: 
+      KAFKA_PASSWORD: 
+      KAFKA_SSL: 
+      KAFKA_SASL_MECHANISM: 
+      CORS_ORIGIN: 
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    image: courier-web:production
+    container_name: courier-web-prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

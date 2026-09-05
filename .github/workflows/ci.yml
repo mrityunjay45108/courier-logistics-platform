@@ -60,13 +60,13 @@ jobs:
           version: 11.20.0
 
       - name: Install Dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client
         run: pnpm db:generate
 
-      - name: Push Schema to Test Database
-        run: pnpm db:push --accept-data-loss
+      - name: Deploy Migrations to Test Database
+        run: pnpm db:migrate:deploy
 
       - name: Seed Database
         run: pnpm db:seed
@@ -82,3 +82,9 @@ jobs:
 
       - name: Build Web & API
         run: pnpm build
+
+      - name: Verify API Docker Build
+        run: docker build -f docker/Dockerfile.api -t courier-api:ci .
+
+      - name: Verify Web Docker Build
+        run: docker build -f docker/Dockerfile.web -t courier-web:ci .

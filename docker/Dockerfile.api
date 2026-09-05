@@ -1,32 +1,57 @@
-# Base Node Alpine image
-FROM node:22-alpine AS base
+﻿# Stage 1: Base & Dependencies
+FROM node:22-alpine AS dependencies
 WORKDIR /app
 RUN npm install -g pnpm@11.20.0
 
-# Copy workspace metadata
+# Copy workspace configuration and package manifests
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY packages/types/package.json ./packages/types/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/config/package.json ./packages/config/
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+
+# Copy packages and api source for building
 COPY packages ./packages
 COPY apps/api ./apps/api
 
-# Install dependencies
+# Install dependencies with frozen lockfile
 RUN pnpm install --frozen-lockfile
 
-# Generate Prisma Client & Build
-WORKDIR /app/apps/api
-RUN pnpm prisma generate
-RUN pnpm run build
+# Stage 2: Builder
+FROM dependencies AS builder
+WORKDIR /app
 
-# Production Runner
+# Generate Prisma Client & compile packages + api
+RUN pnpm --filter api db:generate
+RUN pnpm --filter "./packages/*" build
+RUN pnpm --filter api build
+
+# Stage 3: Production Runtime
 FROM node:22-alpine AS runner
 WORKDIR /app
-RUN npm install -g pnpm@11.20.0
 
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/packages ./packages
-COPY --from=base /app/apps/api/dist ./apps/api/dist
-COPY --from=base /app/apps/api/package.json ./apps/api/package.json
-COPY --from=base /app/apps/api/prisma ./apps/api/prisma
+# Install curl for healthcheck and dumb-init for clean signal handling
+RUN apk add --no-cache curl dumb-init
+
+ENV NODE_ENV=production
+ENV PORT=5000
+
+# Copy workspace metadata, dependencies, and compiled build outputs
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/packages ./packages
+COPY --from=builder --chown=node:node /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder --chown=node:node /app/apps/api/dist ./apps/api/dist
+COPY --from=builder --chown=node:node /app/apps/api/prisma ./apps/api/prisma
+
+# Run as unprivileged non-root user
+USER node
 
 EXPOSE 5000
-ENV NODE_ENV=production
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:5000/health/live || exit 1
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["node", "apps/api/dist/server.js"]
