@@ -17,7 +17,7 @@ import {
 
 export class PaymentsService {
   /**
-   * Create Payment Order with server-calculated amount
+   * Create Payment Order with server-calculated amounts
    */
   async createPaymentOrder(shipmentId: string, userId: string) {
     const shipment = await prisma.shipment.findUnique({
